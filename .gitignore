@@ -63,4 +63,5 @@ patch_fixed.sql
 # Application specific
 *.7z
 src.7z
+update-cedem-role.sql
 
