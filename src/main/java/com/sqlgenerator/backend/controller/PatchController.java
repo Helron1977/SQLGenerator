@@ -1,5 +1,6 @@
 package com.sqlgenerator.backend.controller;
 
+import com.sqlgenerator.backend.service.QueryConstants;
 import com.sqlgenerator.backend.service.QueryService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
@@ -21,10 +22,27 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Contrôleur REST pour la génération de patches SQL.
+ * 
+ * Endpoints générés dynamiquement par PatchOpenApiCustomizer :
+ * - POST /api/patch/{id} : mode unitaire (ou avec IN)
+ * - POST /api/patch/{id}/masse : mode masse (uniquement pour requêtes sans IN)
+ * 
+ * Pourquoi deux endpoints séparés ?
+ * - Interface Swagger plus claire : pas de paramètres inutiles selon le mode
+ * - Validation plus simple : fichier CSV requis uniquement en mode masse
+ * - Meilleure expérience utilisateur dans la documentation
+ */
 @RestController
 @RequestMapping("/api/patch")
 @CrossOrigin(origins = "*")
 public class PatchController {
+
+    private static final Logger logger = LoggerFactory.getLogger(PatchController.class);
 
     @Autowired
     private QueryService queryService;
@@ -38,16 +56,21 @@ public class PatchController {
         
         var query = queryService.getQueryById(id);
         if (query == null) {
+            logger.warn("Tentative d'accès à une query inexistante : {}", id);
             return ResponseEntity.notFound().build();
         }
 
-        String executionType = formParams.getOrDefault("executionType", "unitaire");
+        String executionType = formParams.getOrDefault("executionType", QueryConstants.EXECUTION_TYPE_UNITAIRE);
         Map<String, Object> params = extractParameters(query, formParams, fileParams);
         
         try {
             String fileName = queryService.generatePatchFile(id, executionType, params);
             return buildFileResponse(fileName);
+        } catch (IllegalArgumentException e) {
+            logger.error("Erreur de validation pour query '{}' : {}", id, e.getMessage());
+            return ResponseEntity.badRequest().build();
         } catch (Exception e) {
+            logger.error("Erreur lors de la génération du patch pour query '{}' : {}", id, e.getMessage(), e);
             return ResponseEntity.internalServerError().build();
         }
     }
@@ -61,22 +84,26 @@ public class PatchController {
         
         var query = queryService.getQueryById(id);
         if (query == null) {
+            logger.warn("Tentative d'accès à une query inexistante (masse) : {}", id);
             return ResponseEntity.notFound().build();
         }
 
         // Vérifier que le fichier CSV est présent
         if (fileParams == null || !fileParams.containsKey("masseFile")) {
+            logger.warn("Fichier CSV manquant pour query '{}' en mode masse", id);
             return ResponseEntity.badRequest().build();
         }
 
         MultipartFile masseFile = fileParams.get("masseFile");
         if (masseFile == null || masseFile.isEmpty()) {
+            logger.warn("Fichier CSV vide pour query '{}' en mode masse", id);
             return ResponseEntity.badRequest().build();
         }
 
         try {
             // Parser le fichier CSV
             List<String> csvLines = parseFileContent(masseFile);
+            logger.debug("Fichier CSV parsé : {} ligne(s) pour query '{}'", csvLines.size(), id);
             
             Map<String, Object> params = new HashMap<>();
             String ticket = formParams.get("ticket");
@@ -85,9 +112,13 @@ public class PatchController {
             }
             params.put("masseFile", csvLines);
             
-            String fileName = queryService.generatePatchFile(id, "masse", params);
+            String fileName = queryService.generatePatchFile(id, QueryConstants.EXECUTION_TYPE_MASSE, params);
             return buildFileResponse(fileName);
+        } catch (IllegalArgumentException e) {
+            logger.error("Erreur de validation pour query '{}' (masse) : {}", id, e.getMessage());
+            return ResponseEntity.badRequest().build();
         } catch (Exception e) {
+            logger.error("Erreur lors de la génération du patch (masse) pour query '{}' : {}", id, e.getMessage(), e);
             return ResponseEntity.internalServerError().build();
         }
     }

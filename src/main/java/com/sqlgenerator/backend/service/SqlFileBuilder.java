@@ -11,6 +11,18 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
+/**
+ * Service dédié à la construction et à l'écriture des fichiers SQL générés.
+ * 
+ * Séparation des responsabilités :
+ * - QueryService : logique métier (parsing, remplacement placeholders)
+ * - SqlFileBuilder : génération de fichiers (en-tête, nommage, écriture)
+ * 
+ * Pourquoi cette séparation ?
+ * - Facilite la modification du format d'en-tête sans toucher à la logique métier
+ * - Permet de changer facilement le format de nommage des fichiers
+ * - Code plus testable et maintenable
+ */
 @Service
 public class SqlFileBuilder {
 
@@ -18,6 +30,11 @@ public class SqlFileBuilder {
 
     /**
      * Construit le contenu complet du fichier SQL (en-tête + SQL).
+     * 
+     * Structure du fichier généré :
+     * 1. En-tête avec métadonnées (date, ticket, type, etc.)
+     * 2. Ligne vide
+     * 3. SQL traité (avec placeholders remplacés)
      */
     public String buildCompleteFile(QueryDefinition query, String executionType, 
                                     Map<String, Object> params, String sql) {
@@ -30,6 +47,13 @@ public class SqlFileBuilder {
 
     /**
      * Construit l'en-tête du fichier SQL.
+     * 
+     * Pourquoi un en-tête dans chaque fichier généré ?
+     * - Traçabilité : savoir quand et pour quel ticket le fichier a été généré
+     * - Identification : retrouver facilement la requête source
+     * - Audit : historique des générations
+     * 
+     * Format modifiable ici sans impact sur la logique métier.
      */
     public String buildHeader(QueryDefinition query, String executionType, Map<String, Object> params) {
         StringBuilder header = new StringBuilder();
@@ -43,6 +67,13 @@ public class SqlFileBuilder {
 
     /**
      * Génère le nom de fichier avec timestamp.
+     * 
+     * Format : {queryId}_{executionType}_{timestamp}.sql
+     * 
+     * Pourquoi inclure le timestamp ?
+     * - Évite les collisions si plusieurs fichiers sont générés rapidement
+     * - Permet de retrouver facilement un fichier par date
+     * - Facilite le tri chronologique
      */
     public String generateFileName(String queryId, String executionType) {
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
