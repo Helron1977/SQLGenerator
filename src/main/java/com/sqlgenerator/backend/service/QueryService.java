@@ -14,9 +14,25 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Service principal pour la gestion des requêtes SQL.
+ * 
+ * Responsabilités :
+ * - Chargement et parsing des fichiers SQL au démarrage
+ * - Traitement des requêtes SQL (remplacement de placeholders, lotissement, mode masse)
+ * - Délégation de la génération de fichiers à SqlFileBuilder
+ */
 @Service
 public class QueryService {
+
+    private static final Logger logger = LoggerFactory.getLogger(QueryService.class);
 
     private List<QueryDefinition> queries;
 
@@ -26,18 +42,44 @@ public class QueryService {
     @Autowired
     private SqlFileBuilder sqlFileBuilder;
 
+    /**
+     * Initialise le service au démarrage de l'application.
+     * 
+     * Pourquoi cette méthode existe :
+     * - Scanne automatiquement tous les fichiers SQL dans resources/sql/
+     * - Parse les métadonnées pour créer les QueryDefinition
+     * - Crée le répertoire de sortie si nécessaire
+     * 
+     * Les erreurs de parsing sont loggées mais n'empêchent pas le démarrage
+     * pour permettre à l'application de démarrer même si un fichier SQL est mal formé.
+     */
     @PostConstruct
     public void init() throws IOException {
         queries = new ArrayList<>();
         
         List<String> sqlFiles = scanSqlFiles();
+        logger.info("Démarrage : {} fichier(s) SQL trouvé(s)", sqlFiles.size());
+        
         for (String filename : sqlFiles) {
             try {
                 QueryDefinition query = loadQueryFromFile(filename);
+                
+                // Valider les placeholders vs paramètres définis
+                String sqlContent = loadSqlFromFile(query);
+                validatePlaceholders(query, sqlContent, filename);
+                
                 queries.add(query);
+                logger.debug("Query chargée : {} ({})", query.getId(), query.getName());
             } catch (Exception e) {
-                System.err.println("Erreur parsing " + filename + ": " + e.getMessage());
+                // Log mais ne bloque pas le démarrage : un fichier mal formé ne doit pas empêcher l'app
+                logger.error("❌ Erreur lors du parsing du fichier '{}' : {}", filename, e.getMessage(), e);
             }
+        }
+        
+        logger.info("Initialisation terminée : {} query(s) chargée(s) avec succès", queries.size());
+        
+        if (queries.isEmpty()) {
+            logger.warn("⚠️  Aucune query chargée. Vérifiez que les fichiers SQL sont dans src/main/resources/sql/");
         }
         
         Files.createDirectories(Paths.get("./svn_repo_mock/"));
@@ -99,26 +141,103 @@ public class QueryService {
         return removeMetadataComments(sqlContent);
     }
 
+    /**
+     * Valide que tous les placeholders {{param}} dans le SQL ont un paramètre défini.
+     * 
+     * Pourquoi cette validation ?
+     * - Détecte les erreurs de configuration au démarrage
+     * - Évite les bugs en production (placeholders non remplacés)
+     * - Améliore la qualité du code SQL
+     * 
+     * @param query La définition de la query avec ses paramètres
+     * @param sqlContent Le contenu SQL (sans métadonnées)
+     * @param filename Le nom du fichier pour les messages d'erreur
+     * @throws IllegalArgumentException Si des placeholders ne sont pas définis
+     */
+    private void validatePlaceholders(QueryDefinition query, String sqlContent, String filename) {
+        // Extraire tous les placeholders du format {{nom_param}}
+        Pattern placeholderPattern = Pattern.compile("\\{\\{([^}]+)\\}\\}");
+        Matcher matcher = placeholderPattern.matcher(sqlContent);
+        Set<String> placeholders = new HashSet<>();
+        
+        while (matcher.find()) {
+            placeholders.add(matcher.group(1).trim());
+        }
+        
+        // Si aucun placeholder, pas de validation nécessaire
+        if (placeholders.isEmpty()) {
+            return;
+        }
+        
+        // Récupérer les noms des paramètres définis
+        Set<String> definedParams = new HashSet<>();
+        if (query.getParameters() != null) {
+            definedParams = query.getParameters().stream()
+                    .map(ParameterDefinition::getName)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
+        }
+        
+        // Trouver les placeholders non définis
+        Set<String> missing = new HashSet<>(placeholders);
+        missing.removeAll(definedParams);
+        
+        if (!missing.isEmpty()) {
+            String missingList = String.join(", ", missing);
+            throw new IllegalArgumentException(
+                String.format(
+                    "❌ Fichier '%s' : Placeholders non définis dans les paramètres : %s\n" +
+                    "   Solution : Ajoutez les paramètres manquants avec -- @param: ou -- @param-file:\n" +
+                    "   Exemple : -- @param: %s|text|Description|true",
+                    filename, missingList, missing.iterator().next()
+                )
+            );
+        }
+        
+        // Vérifier aussi les paramètres définis mais non utilisés (warning seulement)
+        Set<String> unused = new HashSet<>(definedParams);
+        unused.removeAll(placeholders);
+        if (!unused.isEmpty()) {
+            logger.warn("Fichier '{}' : Paramètres définis mais non utilisés dans le SQL : {}", 
+                    filename, String.join(", ", unused));
+        }
+    }
+
+    /**
+     * Traite le SQL selon le type d'exécution et les paramètres fournis.
+     * 
+     * Ordre de traitement (important) :
+     * 1. Mode masse : priorité si fichier CSV fourni (génère n requêtes)
+     * 2. Lotissement : si clause IN > 999 valeurs (limite Oracle)
+     * 3. Mode unitaire : traitement standard avec remplacement simple
+     */
     private String processSqlWithParams(QueryDefinition query, String baseSql, Map<String, Object> params, String executionType) {
         // Mode masse : générer n requêtes (une par ligne du fichier CSV)
-        if ("masse".equals(executionType) && params.containsKey("masseFile")) {
+        if (QueryConstants.EXECUTION_TYPE_MASSE.equals(executionType) && params.containsKey("masseFile")) {
             return generateMasseSql(query, baseSql, params);
         }
         
-        // Lotissement pour clauses IN > 999 valeurs
+        // Lotissement pour clauses IN > 999 valeurs (limite Oracle)
         if (requiresBatching(query, params)) {
             return generateBatchedSql(query, baseSql, params);
         }
         
-        // Mode unitaire standard
+        // Mode unitaire standard : remplacement simple des placeholders
         return replacePlaceholders(query, baseSql, params);
     }
 
+    /**
+     * Vérifie si un lotissement est nécessaire pour une clause IN.
+     * 
+     * Pourquoi 999 et pas 1000 ?
+     * Oracle limite les clauses IN à 1000 éléments. On utilise 999 pour éviter
+     * les erreurs de dépassement et laisser une marge de sécurité.
+     */
     private boolean requiresBatching(QueryDefinition query, Map<String, Object> params) {
         return query.getParameters().stream()
                 .anyMatch(p -> p.isFile() 
                         && params.get(p.getName()) instanceof List 
-                        && ((List<?>) params.get(p.getName())).size() > 999);
+                        && ((List<?>) params.get(p.getName())).size() > QueryConstants.ORACLE_IN_MAX_SIZE);
     }
 
     private String replacePlaceholders(QueryDefinition query, String sql, Map<String, Object> params) {
@@ -143,7 +262,15 @@ public class QueryService {
     }
 
     /**
-     * Vérifie si la valeur représente NULL (chaîne vide, "null", "NULL", etc.).
+     * Vérifie si la valeur représente NULL.
+     * 
+     * Pourquoi cette méthode existe :
+     * Les utilisateurs peuvent fournir NULL de différentes manières :
+     * - Chaîne vide ""
+     * - Mot-clé "null" ou "NULL"
+     * - Valeur null réelle
+     * 
+     * Cette méthode unifie la détection pour éviter les incohérences.
      */
     private boolean isNullValue(Object value) {
         if (value == null) {
@@ -203,8 +330,14 @@ public class QueryService {
 
     /**
      * Formate une date au format DD/MM/YY (ex: 30/11/25).
+     * 
+     * Pourquoi ce format spécifique ?
+     * Les dates sont souvent stockées en CHAR dans Oracle, pas en DATE.
+     * Le format DD/MM/YY est le format standard utilisé dans ce contexte métier.
+     * 
      * Si la date est déjà au bon format, la retourne telle quelle.
-     * Sinon, tente de convertir depuis d'autres formats.
+     * Sinon, tente de convertir depuis d'autres formats (ex: YYYY-MM-DD).
+     * Si aucun format reconnu, retourne tel quel (responsabilité du dev SQL).
      */
     private String formatDate(String dateValue) {
         if (dateValue == null || dateValue.trim().isEmpty() || isNullValue(dateValue)) {
@@ -302,9 +435,17 @@ public class QueryService {
         return result;
     }
 
+    /**
+     * Génère plusieurs lots de SQL pour gérer les clauses IN > 999 valeurs.
+     * 
+     * Pourquoi diviser en lots ?
+     * Oracle ne supporte pas plus de 1000 éléments dans une clause IN.
+     * On génère donc plusieurs requêtes SQL séparées avec des commentaires
+     * pour identifier chaque lot.
+     */
     private String generateBatches(ParameterDefinition fileParam, List<String> values, String sqlTemplate) {
         StringBuilder result = new StringBuilder();
-        int batchSize = 999;
+        int batchSize = QueryConstants.ORACLE_IN_MAX_SIZE;
         int totalBatches = (int) Math.ceil((double) values.size() / batchSize);
 
         for (int i = 0; i < totalBatches; i++) {
