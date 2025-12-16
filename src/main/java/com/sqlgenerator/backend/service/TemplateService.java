@@ -1,6 +1,6 @@
 package com.sqlgenerator.backend.service;
 
-import com.sqlgenerator.backend.model.QueryDefinition;
+import com.sqlgenerator.backend.model.TemplateDefinition;
 import com.sqlgenerator.backend.model.ParameterDefinition;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,32 +22,35 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Service principal pour la gestion des requêtes SQL.
+ * Service principal pour la gestion des templates SQL.
  * 
  * Responsabilités :
  * - Chargement et parsing des fichiers SQL au démarrage
- * - Traitement des requêtes SQL (remplacement de placeholders, lotissement, mode masse)
+ * - Traitement des templates SQL (remplacement de placeholders, lotissement, mode masse)
  * - Délégation de la génération de fichiers à SqlFileBuilder
  */
 @Service
-public class QueryService {
+public class TemplateService {
 
-    private static final Logger logger = LoggerFactory.getLogger(QueryService.class);
+    private static final Logger logger = LoggerFactory.getLogger(TemplateService.class);
 
-    private List<QueryDefinition> queries;
+    private List<TemplateDefinition> templates; // Templates SQL chargés
 
     @Autowired
-    private QueryMetadataParser metadataParser;
+    private TemplateMetadataParser metadataParser;
 
     @Autowired
     private SqlFileBuilder sqlFileBuilder;
+
+    @Autowired
+    private com.sqlgenerator.backend.config.AppProperties appProperties;
 
     /**
      * Initialise le service au démarrage de l'application.
      * 
      * Pourquoi cette méthode existe :
-     * - Scanne automatiquement tous les fichiers SQL dans resources/sql/
-     * - Parse les métadonnées pour créer les QueryDefinition
+     * - Scanne automatiquement tous les fichiers SQL dans resources/templates/
+     * - Parse les métadonnées pour créer les TemplateDefinition
      * - Crée le répertoire de sortie si nécessaire
      * 
      * Les erreurs de parsing sont loggées mais n'empêchent pas le démarrage
@@ -55,44 +58,50 @@ public class QueryService {
      */
     @PostConstruct
     public void init() throws IOException {
-        queries = new ArrayList<>();
+        templates = new ArrayList<>();
         
         List<String> sqlFiles = scanSqlFiles();
         logger.info("Démarrage : {} fichier(s) SQL trouvé(s)", sqlFiles.size());
         
         for (String filename : sqlFiles) {
             try {
-                QueryDefinition query = loadQueryFromFile(filename);
+                TemplateDefinition template = loadTemplateFromFile(filename);
                 
                 // Valider les placeholders vs paramètres définis
-                String sqlContent = loadSqlFromFile(query);
-                validatePlaceholders(query, sqlContent, filename);
+                String sqlContent = loadSqlFromFile(template);
+                validatePlaceholders(template, sqlContent, filename);
                 
-                queries.add(query);
-                logger.debug("Query chargée : {} ({})", query.getId(), query.getName());
+                templates.add(template);
+                logger.debug("Template chargé : {} ({})", template.getId(), template.getName());
             } catch (Exception e) {
                 // Log mais ne bloque pas le démarrage : un fichier mal formé ne doit pas empêcher l'app
                 logger.error("❌ Erreur lors du parsing du fichier '{}' : {}", filename, e.getMessage(), e);
             }
         }
         
-        logger.info("Initialisation terminée : {} query(s) chargée(s) avec succès", queries.size());
+        logger.info("Initialisation terminée : {} template(s) chargé(s) avec succès", templates.size());
         
-        if (queries.isEmpty()) {
-            logger.warn("⚠️  Aucune query chargée. Vérifiez que les fichiers SQL sont dans src/main/resources/sql/");
+        if (templates.isEmpty()) {
+            logger.warn("⚠️  Aucun template chargé. Vérifiez que les fichiers SQL sont dans src/main/resources/templates/");
         }
         
-        Files.createDirectories(Paths.get("./svn_repo_mock/"));
+        // Créer le répertoire de sortie au démarrage
+        try {
+            Files.createDirectories(Paths.get(appProperties.getOutputScriptsPath()));
+            logger.debug("Répertoire de sortie créé/vérifié: {}", appProperties.getOutputScriptsPath());
+        } catch (Exception e) {
+            logger.warn("Impossible de créer le répertoire de sortie: {}", e.getMessage());
+        }
     }
 
     private List<String> scanSqlFiles() throws IOException {
         List<String> filenames = new ArrayList<>();
         ResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
-        Resource[] resources = resolver.getResources("classpath:sql/*.sql");
+        Resource[] resources = resolver.getResources(TemplateConstants.TEMPLATES_CLASSPATH_PATTERN);
         
         for (Resource resource : resources) {
             String filename = resource.getFilename();
-            if (filename != null && filename.endsWith(".sql")) {
+            if (filename != null && filename.endsWith(TemplateConstants.SQL_FILE_EXTENSION)) {
                 filenames.add(filename);
             }
         }
@@ -100,42 +109,42 @@ public class QueryService {
         return filenames;
     }
 
-    private QueryDefinition loadQueryFromFile(String filename) throws IOException {
+    private TemplateDefinition loadTemplateFromFile(String filename) throws IOException {
         return metadataParser.parseSqlFile(filename);
     }
 
-    public QueryDefinition getQueryById(String id) {
-        return queries.stream()
-                .filter(q -> q.getId().equals(id))
+    public TemplateDefinition getTemplateById(String id) {
+        return templates.stream()
+                .filter(t -> t.getId().equals(id))
                 .findFirst()
                 .orElse(null);
     }
 
-    public List<QueryDefinition> getAllQueries() {
-        return queries != null ? queries : Collections.emptyList();
+    public List<TemplateDefinition> getAllTemplates() {
+        return templates != null ? templates : Collections.emptyList();
     }
 
-    public String generatePatchFile(String queryId, String executionType, Map<String, Object> params)
+    public String generateScriptFile(String templateId, String executionType, Map<String, Object> params)
             throws IOException {
-        QueryDefinition query = validateAndGetQuery(queryId);
-        String baseSql = loadSqlFromFile(query);
-        String sql = processSqlWithParams(query, baseSql, params, executionType);
-        return sqlFileBuilder.buildAndWriteFile(query, executionType, params, sql);
+        TemplateDefinition template = validateAndGetTemplate(templateId);
+        String baseSql = loadSqlFromFile(template);
+        String sql = processSqlWithParams(template, baseSql, params, executionType);
+        return sqlFileBuilder.buildAndWriteFile(template, executionType, params, sql);
     }
 
-    private QueryDefinition validateAndGetQuery(String queryId) {
-        QueryDefinition query = getQueryById(queryId);
-        if (query == null) {
-            throw new IllegalArgumentException("Query not found: " + queryId);
+    private TemplateDefinition validateAndGetTemplate(String templateId) {
+        TemplateDefinition template = getTemplateById(templateId);
+        if (template == null) {
+            throw new IllegalArgumentException("Template not found: " + templateId);
         }
-        if (query.getSqlFile() == null || query.getSqlFile().isEmpty()) {
-            throw new IllegalArgumentException("Query must have sqlFile defined: " + queryId);
+        if (template.getSqlFilename() == null || template.getSqlFilename().isEmpty()) {
+            throw new IllegalArgumentException("Template must have sqlFilename defined: " + templateId);
         }
-        return query;
+        return template;
     }
 
-    private String loadSqlFromFile(QueryDefinition query) throws IOException {
-        ClassPathResource sqlResource = new ClassPathResource("sql/" + query.getSqlFile());
+    private String loadSqlFromFile(TemplateDefinition template) throws IOException {
+        ClassPathResource sqlResource = new ClassPathResource(TemplateConstants.TEMPLATES_DIR + template.getSqlFilename());
         String sqlContent = new String(sqlResource.getInputStream().readAllBytes(), 
                 java.nio.charset.StandardCharsets.UTF_8);
         return removeMetadataComments(sqlContent);
@@ -149,12 +158,12 @@ public class QueryService {
      * - Évite les bugs en production (placeholders non remplacés)
      * - Améliore la qualité du code SQL
      * 
-     * @param query La définition de la query avec ses paramètres
+     * @param template La définition du template avec ses paramètres
      * @param sqlContent Le contenu SQL (sans métadonnées)
      * @param filename Le nom du fichier pour les messages d'erreur
      * @throws IllegalArgumentException Si des placeholders ne sont pas définis
      */
-    private void validatePlaceholders(QueryDefinition query, String sqlContent, String filename) {
+    private void validatePlaceholders(TemplateDefinition template, String sqlContent, String filename) {
         // Extraire tous les placeholders du format {{nom_param}}
         Pattern placeholderPattern = Pattern.compile("\\{\\{([^}]+)\\}\\}");
         Matcher matcher = placeholderPattern.matcher(sqlContent);
@@ -171,8 +180,8 @@ public class QueryService {
         
         // Récupérer les noms des paramètres définis
         Set<String> definedParams = new HashSet<>();
-        if (query.getParameters() != null) {
-            definedParams = query.getParameters().stream()
+        if (template.getParameters() != null) {
+            definedParams = template.getParameters().stream()
                     .map(ParameterDefinition::getName)
                     .filter(Objects::nonNull)
                     .collect(Collectors.toSet());
@@ -211,19 +220,19 @@ public class QueryService {
      * 2. Lotissement : si clause IN > 999 valeurs (limite Oracle)
      * 3. Mode unitaire : traitement standard avec remplacement simple
      */
-    private String processSqlWithParams(QueryDefinition query, String baseSql, Map<String, Object> params, String executionType) {
+    private String processSqlWithParams(TemplateDefinition template, String baseSql, Map<String, Object> params, String executionType) {
         // Mode masse : générer n requêtes (une par ligne du fichier CSV)
-        if (QueryConstants.EXECUTION_TYPE_MASSE.equals(executionType) && params.containsKey("masseFile")) {
-            return generateMasseSql(query, baseSql, params);
+        if (TemplateConstants.EXECUTION_TYPE_MASSE.equals(executionType) && params.containsKey("masseFile")) {
+            return generateMasseSql(template, baseSql, params);
         }
         
         // Lotissement pour clauses IN > 999 valeurs (limite Oracle)
-        if (requiresBatching(query, params)) {
-            return generateBatchedSql(query, baseSql, params);
+        if (requiresBatching(template, params)) {
+            return generateBatchedSql(template, baseSql, params);
         }
         
         // Mode unitaire standard : remplacement simple des placeholders
-        return replacePlaceholders(query, baseSql, params);
+        return replacePlaceholders(template, baseSql, params);
     }
 
     /**
@@ -233,16 +242,16 @@ public class QueryService {
      * Oracle limite les clauses IN à 1000 éléments. On utilise 999 pour éviter
      * les erreurs de dépassement et laisser une marge de sécurité.
      */
-    private boolean requiresBatching(QueryDefinition query, Map<String, Object> params) {
+    private boolean requiresBatching(TemplateDefinition query, Map<String, Object> params) {
         return query.getParameters().stream()
                 .anyMatch(p -> p.isFile() 
                         && params.get(p.getName()) instanceof List 
-                        && ((List<?>) params.get(p.getName())).size() > QueryConstants.ORACLE_IN_MAX_SIZE);
+                        && ((List<?>) params.get(p.getName())).size() > TemplateConstants.ORACLE_IN_MAX_SIZE);
     }
 
-    private String replacePlaceholders(QueryDefinition query, String sql, Map<String, Object> params) {
+    private String replacePlaceholders(TemplateDefinition template, String sql, Map<String, Object> params) {
         String result = sql;
-        for (ParameterDefinition paramDef : query.getParameters()) {
+        for (ParameterDefinition paramDef : template.getParameters()) {
             String replacement = buildParameterReplacement(paramDef, params.get(paramDef.getName()));
             result = result.replace("{{" + paramDef.getName() + "}}", replacement);
         }
@@ -400,8 +409,8 @@ public class QueryService {
     /**
      * Génère du SQL avec lotissement si nécessaire (> 999 valeurs dans un IN).
      */
-    private String generateBatchedSql(QueryDefinition query, String baseSql, Map<String, Object> params) {
-        ParameterDefinition fileParam = findFileParameterForBatching(query, params);
+    private String generateBatchedSql(TemplateDefinition template, String baseSql, Map<String, Object> params) {
+        ParameterDefinition fileParam = findFileParameterForBatching(template, params);
         if (fileParam == null) {
             return baseSql;
         }
@@ -412,21 +421,21 @@ public class QueryService {
             return baseSql;
         }
 
-        String sqlTemplate = replaceNonFileParameters(query, baseSql, params, fileParam);
+        String sqlTemplate = replaceNonFileParameters(template, baseSql, params, fileParam);
         return generateBatches(fileParam, values, sqlTemplate);
     }
 
-    private ParameterDefinition findFileParameterForBatching(QueryDefinition query, Map<String, Object> params) {
-        return query.getParameters().stream()
+    private ParameterDefinition findFileParameterForBatching(TemplateDefinition template, Map<String, Object> params) {
+        return template.getParameters().stream()
                 .filter(p -> p.isFile() && params.get(p.getName()) instanceof List)
                 .findFirst()
                 .orElse(null);
     }
 
-    private String replaceNonFileParameters(QueryDefinition query, String sql, 
+    private String replaceNonFileParameters(TemplateDefinition template, String sql, 
                                            Map<String, Object> params, ParameterDefinition fileParam) {
         String result = sql;
-        for (ParameterDefinition paramDef : query.getParameters()) {
+        for (ParameterDefinition paramDef : template.getParameters()) {
             if (!paramDef.isFile() && !paramDef.getName().equals(fileParam.getName())) {
                 String replacement = buildSimpleParameterReplacement(paramDef.getType(), params.get(paramDef.getName()));
                 result = result.replace("{{" + paramDef.getName() + "}}", replacement);
@@ -445,7 +454,7 @@ public class QueryService {
      */
     private String generateBatches(ParameterDefinition fileParam, List<String> values, String sqlTemplate) {
         StringBuilder result = new StringBuilder();
-        int batchSize = QueryConstants.ORACLE_IN_MAX_SIZE;
+        int batchSize = TemplateConstants.ORACLE_IN_MAX_SIZE;
         int totalBatches = (int) Math.ceil((double) values.size() / batchSize);
 
         for (int i = 0; i < totalBatches; i++) {
@@ -506,7 +515,7 @@ public class QueryService {
      * Génère du SQL en mode masse : n lignes dans le fichier CSV = n requêtes SQL dans un seul fichier.
      * Format du fichier : CSV avec une ligne par requête, valeurs séparées par virgule dans l'ordre des paramètres.
      */
-    private String generateMasseSql(QueryDefinition query, String baseSql, Map<String, Object> params) {
+    private String generateMasseSql(TemplateDefinition template, String baseSql, Map<String, Object> params) {
         // Récupérer les lignes du fichier CSV uploadé
         @SuppressWarnings("unchecked")
         List<String> fileLines = (List<String>) params.get("masseFile");
@@ -515,7 +524,7 @@ public class QueryService {
         }
 
         // Extraire l'ordre des paramètres (tous les paramètres non-fichier dans l'ordre)
-        List<ParameterDefinition> orderedParams = query.getParameters().stream()
+        List<ParameterDefinition> orderedParams = template.getParameters().stream()
                 .filter(p -> !p.isFile())
                 .collect(java.util.stream.Collectors.toList());
 
@@ -532,7 +541,7 @@ public class QueryService {
             result.append("-- Requête ").append(i + 1).append("/").append(fileLines.size()).append("\n");
             
             // Remplacer les placeholders avec les valeurs de la ligne
-            String sqlForLine = replacePlaceholdersForLine(query, baseSql, lineParams, params);
+            String sqlForLine = replacePlaceholdersForLine(template, baseSql, lineParams, params);
             result.append(sqlForLine);
         }
 
@@ -561,12 +570,12 @@ public class QueryService {
     /**
      * Remplace les placeholders pour une ligne spécifique (mode masse).
      */
-    private String replacePlaceholdersForLine(QueryDefinition query, String sql, 
+    private String replacePlaceholdersForLine(TemplateDefinition template, String sql, 
                                               Map<String, Object> lineParams, Map<String, Object> globalParams) {
         String result = sql;
         
         // Remplacer avec les paramètres de la ligne
-        for (ParameterDefinition paramDef : query.getParameters()) {
+        for (ParameterDefinition paramDef : template.getParameters()) {
             if (!paramDef.isFile()) {
                 Object value = lineParams.get(paramDef.getName());
                 if (value == null) {

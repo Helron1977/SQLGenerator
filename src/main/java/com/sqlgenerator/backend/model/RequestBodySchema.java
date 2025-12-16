@@ -4,7 +4,7 @@ import lombok.Data;
 import java.util.Map;
 
 /**
- * Schéma de structure JSON pour construire le body d'une requête.
+ * Schéma de structure JSON pour construire le body d'un template.
  * 
  * Contient la structure attendue (clés, types, exemples) sans valeurs réelles,
  * pour permettre au front de construire dynamiquement le formulaire et le body.
@@ -13,17 +13,17 @@ import java.util.Map;
 public class RequestBodySchema {
 
     /**
-     * Identifiant de la query.
+     * Identifiant du template.
      */
-    private String queryId;
+    private String templateId;
 
     /**
-     * Nom de la query.
+     * Nom du template.
      */
     private String name;
 
     /**
-     * Description de la query.
+     * Description du template.
      */
     private String description;
 

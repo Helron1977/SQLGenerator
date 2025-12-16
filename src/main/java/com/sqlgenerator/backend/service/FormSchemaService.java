@@ -3,7 +3,7 @@ package com.sqlgenerator.backend.service;
 import com.sqlgenerator.backend.model.FormField;
 import com.sqlgenerator.backend.model.FormSchema;
 import com.sqlgenerator.backend.model.ParameterDefinition;
-import com.sqlgenerator.backend.model.QueryDefinition;
+import com.sqlgenerator.backend.model.TemplateDefinition;
 import com.sqlgenerator.backend.model.RequestBodySchema;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -17,7 +17,7 @@ import java.util.stream.Collectors;
 
 /**
  * Service responsable de la construction des schémas de formulaires
- * à partir des QueryDefinition.
+ * à partir des TemplateDefinition (templates SQL).
  *
  * Ce service encapsule les règles métier déjà présentes pour Swagger
  * (ticket, executionType, IN, mode masse) mais de manière indépendante
@@ -27,39 +27,39 @@ import java.util.stream.Collectors;
 public class FormSchemaService {
 
     @Autowired
-    private QueryService queryService;
+    private TemplateService templateService;
 
     /**
-     * Retourne les schémas de formulaires pour toutes les queries disponibles.
+     * Retourne les schémas de formulaires pour tous les templates disponibles.
      */
     public List<FormSchema> getAllFormSchemas() {
-        List<QueryDefinition> queries = queryService.getAllQueries();
-        if (queries == null || queries.isEmpty()) {
+        List<TemplateDefinition> templates = templateService.getAllTemplates();
+        if (templates == null || templates.isEmpty()) {
             return Collections.emptyList();
         }
 
-        return queries.stream()
+        return templates.stream()
                 .map(this::buildFormSchema)
                 .collect(Collectors.toList());
     }
 
     /**
-     * Retourne le schéma de formulaire pour une query donnée.
+     * Retourne le schéma de formulaire pour un template donné.
      *
-     * @param id identifiant de la query
-     * @return FormSchema ou null si non trouvée
+     * @param id identifiant du template
+     * @return FormSchema ou null si non trouvé
      */
     public FormSchema getFormSchema(String id) {
-        QueryDefinition query = queryService.getQueryById(id);
-        return query != null ? buildFormSchema(query) : null;
+        TemplateDefinition template = templateService.getTemplateById(id);
+        return template != null ? buildFormSchema(template) : null;
     }
 
     /**
-     * Retourne la structure JSON du body attendu pour une query donnée.
+     * Retourne la structure JSON du body attendu pour un template donné.
      * Contient les clés avec des valeurs d'exemple/vides pour construire le formulaire.
      *
-     * @param id identifiant de la query
-     * @return RequestBodySchema ou null si non trouvée
+     * @param id identifiant du template
+     * @return RequestBodySchema ou null si non trouvé
      */
     /**
      * Retourne la structure JSON pour le mode unitaire (prêt à copier-coller).
@@ -74,7 +74,7 @@ public class FormSchemaService {
 
     /**
      * Retourne la structure JSON pour le mode masse (prêt à copier-coller).
-     * Retourne null si le mode masse n'est pas disponible pour cette query.
+     * Retourne null si le mode masse n'est pas disponible pour ce template.
      */
     public Map<String, Object> getMassBodyStructure(String id) {
         FormSchema formSchema = getFormSchema(id);
@@ -84,7 +84,7 @@ public class FormSchemaService {
         
         // Vérifier que le mode masse est disponible
         if (formSchema.getMassFields() == null || formSchema.getMassFields().isEmpty()) {
-            return null; // Mode masse non disponible (query avec IN)
+            return null; // Mode masse non disponible (template avec IN)
         }
         
         return buildJsonBodyFromFields(formSchema.getMassFields());
@@ -101,7 +101,7 @@ public class FormSchemaService {
         }
 
         RequestBodySchema bodySchema = new RequestBodySchema();
-        bodySchema.setQueryId(formSchema.getQueryId());
+        bodySchema.setTemplateId(formSchema.getTemplateId());
         bodySchema.setName(formSchema.getName());
         bodySchema.setDescription(formSchema.getDescription());
         bodySchema.setMassModeAvailable(formSchema.getMassFields() != null && !formSchema.getMassFields().isEmpty());
@@ -175,131 +175,32 @@ public class FormSchemaService {
     }
 
     /**
-     * Construit un exemple de body formaté en application/x-www-form-urlencoded.
-     * Format : "ticket=xxx&executionType=unitaire&param1=value1&param2=value2"
+     * Construit le schéma de formulaire pour un template.
      */
-    private String buildFormUrlEncodedExample(List<FormField> fields) {
-        if (fields == null || fields.isEmpty()) {
-            return "";
-        }
-
-        List<String> params = new ArrayList<>();
-        for (FormField field : fields) {
-            if (field == null || field.getName() == null) {
-                continue;
-            }
-
-            // Les fichiers ne sont pas dans form-urlencoded, ils sont en multipart
-            if ("file".equals(field.getType())) {
-                continue;
-            }
-
-            String value = getExampleValueForFormUrlEncoded(field);
-            params.add(field.getName() + "=" + value);
-        }
-
-        return String.join("&", params);
-    }
-
-    /**
-     * Retourne une valeur d'exemple formatée pour form-urlencoded.
-     */
-    private String getExampleValueForFormUrlEncoded(FormField field) {
-        switch (field.getType()) {
-            case "select":
-                if (field.getOptions() != null && !field.getOptions().isEmpty()) {
-                    return field.getOptions().get(0);
-                }
-                return "";
-            case "number":
-            case "integer":
-                return "123";
-            case "date":
-                return "30/11/25";
-            case "text":
-            default:
-                // Valeur d'exemple selon le nom du champ
-                if ("ticket".equals(field.getName())) {
-                    return "dc905fff-27a6-452f-aa0d-360c6c37b94a";
-                }
-                return "example-value";
-        }
-    }
-
-    /**
-     * Construit une structure JSON (Map) à partir d'une liste de FormField.
-     * Les valeurs sont vides ou des exemples selon le type.
-     */
-    private Map<String, Object> buildBodyStructureFromFields(List<FormField> fields) {
-        Map<String, Object> structure = new HashMap<>();
-
-        if (fields == null || fields.isEmpty()) {
-            return structure;
-        }
-
-        for (FormField field : fields) {
-            if (field == null || field.getName() == null) {
-                continue;
-            }
-
-            Object exampleValue = getExampleValueForField(field);
-            structure.put(field.getName(), exampleValue);
-        }
-
-        return structure;
-    }
-
-    /**
-     * Retourne une valeur d'exemple pour un champ selon son type.
-     */
-    private Object getExampleValueForField(FormField field) {
-        switch (field.getType()) {
-            case "file":
-                return null; // Les fichiers ne sont pas dans le JSON, ils sont uploadés séparément
-            case "select":
-                // Retourner la première option ou null
-                if (field.getOptions() != null && !field.getOptions().isEmpty()) {
-                    return field.getOptions().get(0);
-                }
-                return null;
-            case "number":
-            case "integer":
-                return 0;
-            case "date":
-                return "30/11/25"; // Format exemple
-            case "text":
-            default:
-                return ""; // Chaîne vide pour les champs texte
-        }
-    }
-
-    /**
-     * Construit le schéma de formulaire pour une query.
-     */
-    private FormSchema buildFormSchema(QueryDefinition query) {
+    private FormSchema buildFormSchema(TemplateDefinition template) {
         FormSchema schema = new FormSchema();
-        schema.setQueryId(query.getId());
-        schema.setName(query.getName() != null ? query.getName() : query.getId());
-        schema.setDescription(query.getDescription());
-        schema.setTags(query.getTags() != null ? query.getTags() : Collections.emptyList());
-
-        boolean hasInParameter = hasInParameter(query);
+        schema.setTemplateId(template.getId());
+        schema.setName(template.getName() != null ? template.getName() : template.getId());
+        schema.setDescription(template.getDescription());
+        schema.setTags(template.getTags() != null ? template.getTags() : Collections.emptyList());
+        
+        boolean hasInParameter = hasInParameter(template);
         schema.setHasInParameter(hasInParameter);
 
         // Modes supportés
         List<String> modes = new ArrayList<>();
-        modes.add(QueryConstants.EXECUTION_TYPE_UNITAIRE);
+        modes.add(TemplateConstants.EXECUTION_TYPE_UNITAIRE);
         if (!hasInParameter) {
-            modes.add(QueryConstants.EXECUTION_TYPE_MASSE);
+            modes.add(TemplateConstants.EXECUTION_TYPE_MASSE);
         }
         schema.setModes(modes);
 
         // Champs pour le mode unitaire
-        schema.setUnitFields(buildUnitFields(query, hasInParameter));
+        schema.setUnitFields(buildUnitFields(template, hasInParameter));
 
         // Champs pour le mode masse (uniquement si pas de IN)
         if (!hasInParameter) {
-            schema.setMassFields(buildMassFields(query));
+            schema.setMassFields(buildMassFields(template));
         } else {
             schema.setMassFields(null);
         }
@@ -307,7 +208,7 @@ public class FormSchemaService {
         return schema;
     }
 
-    private boolean hasInParameter(QueryDefinition query) {
+    private boolean hasInParameter(TemplateDefinition query) {
         return query.getParameters() != null &&
                 query.getParameters().stream().anyMatch(ParameterDefinition::isFile);
     }
@@ -317,9 +218,9 @@ public class FormSchemaService {
      * Contient :
      * - ticket (obligatoire)
      * - executionType (select : unitaire ou unitaire/masse selon hasInParameter)
-     * - tous les paramètres de la query (y compris les fichiers pour IN)
+     * - tous les paramètres du template (y compris les fichiers pour IN)
      */
-    private List<FormField> buildUnitFields(QueryDefinition query, boolean hasInParameter) {
+    private List<FormField> buildUnitFields(TemplateDefinition template, boolean hasInParameter) {
         List<FormField> fields = new ArrayList<>();
 
         // Champ ticket
@@ -339,18 +240,18 @@ public class FormSchemaService {
         executionType.setRequired(true);
 
         List<String> options = new ArrayList<>();
-        options.add(QueryConstants.EXECUTION_TYPE_UNITAIRE);
+        options.add(TemplateConstants.EXECUTION_TYPE_UNITAIRE);
         if (!hasInParameter) {
             // Pour les requêtes sans IN, on propose aussi le mode masse
-            options.add(QueryConstants.EXECUTION_TYPE_MASSE);
+            options.add(TemplateConstants.EXECUTION_TYPE_MASSE);
         }
         executionType.setOptions(options);
         executionType.setHelpText("Choisissez 'unitaire' pour une exécution simple, 'masse' pour un fichier CSV.");
         fields.add(executionType);
 
-        // Paramètres de la query
-        if (query.getParameters() != null) {
-            for (ParameterDefinition param : query.getParameters()) {
+        // Paramètres du template
+        if (template.getParameters() != null) {
+            for (ParameterDefinition param : template.getParameters()) {
                 if (param == null || param.getName() == null) {
                     continue;
                 }
@@ -367,7 +268,7 @@ public class FormSchemaService {
      * - ticket
      * - masseFile (CSV obligatoire)
      */
-    private List<FormField> buildMassFields(QueryDefinition query) {
+    private List<FormField> buildMassFields(TemplateDefinition template) {
         List<FormField> fields = new ArrayList<>();
 
         // ticket (même champ que pour le mode unitaire)
@@ -388,7 +289,7 @@ public class FormSchemaService {
 
         StringBuilder help = new StringBuilder();
         help.append("Fichier CSV avec une ligne par requête, valeurs séparées par virgule dans l'ordre des paramètres : ");
-        help.append(getParameterOrderDescription(query));
+        help.append(getParameterOrderDescription(template));
 
         masseFile.setHelpText(help.toString());
         fields.add(masseFile);
@@ -417,7 +318,7 @@ public class FormSchemaService {
                     break;
                 case "date":
                     field.setType("date");
-                    field.setHelpText("Format attendu : " + QueryConstants.DATE_FORMAT + " (ex: 30/11/25)");
+                    field.setHelpText("Format attendu : " + TemplateConstants.DATE_FORMAT + " (ex: 30/11/25)");
                     break;
                 default:
                     field.setType("text");
@@ -431,7 +332,7 @@ public class FormSchemaService {
      * Génère une description de l'ordre des paramètres pour le mode masse.
      * Reprend la logique déjà utilisée pour Swagger.
      */
-    private String getParameterOrderDescription(QueryDefinition query) {
+    private String getParameterOrderDescription(TemplateDefinition query) {
         if (query.getParameters() == null || query.getParameters().isEmpty()) {
             return "Aucun paramètre";
         }

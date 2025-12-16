@@ -5,7 +5,7 @@ import lombok.Data;
 import java.util.List;
 
 /**
- * Schéma de formulaire pour une query donnée.
+ * Schéma de formulaire pour un template donné.
  *
  * Ce modèle décrit les champs à afficher côté front
  * pour les différents modes d'exécution (unitaire, masse).
@@ -14,17 +14,17 @@ import java.util.List;
 public class FormSchema {
 
     /**
-     * Identifiant technique de la query (id).
+     * Identifiant technique du template (id).
      */
-    private String queryId;
+    private String templateId;
 
     /**
-     * Nom lisible de la query (name) si présent, sinon id.
+     * Nom lisible du template (name) si présent, sinon id.
      */
     private String name;
 
     /**
-     * Description fonctionnelle de la query.
+     * Description fonctionnelle du template.
      */
     private String description;
 
@@ -34,29 +34,29 @@ public class FormSchema {
     private List<String> tags;
 
     /**
-     * Indique si la query utilise un paramètre fichier @param-file (clause IN).
+     * Indique si le template utilise un paramètre fichier @param-file (clause IN).
      */
     private boolean hasInParameter;
 
     /**
-     * Modes d'exécution supportés par cette query.
+     * Modes d'exécution supportés par ce template.
      * Exemples :
-     * - ["unitaire"] pour les requêtes avec IN
-     * - ["unitaire","masse"] pour les requêtes sans IN
+     * - ["unitaire"] pour les templates avec IN
+     * - ["unitaire","masse"] pour les templates sans IN
      */
     private List<String> modes;
 
     /**
      * Champs du formulaire pour le mode unitaire.
      * Contient toujours au moins le ticket et l'executionType,
-     * plus les paramètres de la query.
+     * plus les paramètres du template.
      */
     private List<FormField> unitFields;
 
     /**
      * Champs du formulaire pour le mode masse.
-     * Null si le mode masse n'est pas supporté pour cette query
-     * (ex: requêtes avec IN).
+     * Null si le mode masse n'est pas supporté pour ce template
+     * (ex: templates avec IN).
      */
     private List<FormField> massFields;
 }

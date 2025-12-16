@@ -3,7 +3,7 @@ package com.sqlgenerator.backend.model;
 import lombok.Data;
 
 /**
- * Représente un champ d'un formulaire pour une query.
+ * Représente un champ d'un formulaire pour un template.
  *
  * Cette classe est indépendante de Swagger / OpenAPI.
  * Elle sert de contrat simple entre le backend et un front (React, autre)

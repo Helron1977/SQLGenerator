@@ -1,268 +1,266 @@
-# SQL Patch Generator
+# 🔧 SQL Generator
 
-Application Spring Boot pour générer dynamiquement des fichiers de patch SQL à partir de templates paramétrés, avec documentation Swagger automatique.
+**Générateur de scripts SQL paramétrés avec API REST et documentation Swagger automatique.**
 
-## 🎯 Fonctionnalités
+---
 
-- ✅ **Génération dynamique de patches SQL** à partir de templates
-- ✅ **Documentation Swagger automatique** : chaque requête SQL génère un endpoint avec formulaire interactif
-- ✅ **Système de tags** : filtrage des endpoints par catégories
-- ✅ **Support PL/SQL complet** : blocs DECLARE/BEGIN/END, transactions, logs
-- ✅ **Aucune modification de code** : ajoutez simplement un fichier SQL avec métadonnées
-- ✅ **Interface utilisateur intuitive** : formulaire Swagger pour chaque endpoint
+## 📋 Description
 
-## 🚀 Démarrage rapide
+SQL Generator est un outil qui transforme vos fichiers SQL paramétrés en API REST documentée automatiquement. Ajoutez simplement un fichier `.sql` avec des métadonnées, et obtenez instantanément un endpoint Swagger prêt à l'emploi.
 
-### Prérequis
+### ✨ Fonctionnalités
 
-- Java 17 ou supérieur
-- Maven 3.6+
+- **📝 Définition simple** : Écrivez vos requêtes SQL avec des métadonnées dans les commentaires
+- **🚀 API REST automatique** : Un endpoint par fichier SQL
+- **📖 Documentation Swagger** : Interface de test intégrée
+- **🔄 Modes d'exécution** :
+  - **Unitaire** : 1 requête → 1 script SQL
+  - **Masse** : 1 fichier CSV → N scripts SQL (1 par ligne)
+- **📊 Gestion des clauses IN** : Lotissement automatique (batches de 999 pour Oracle)
+- **💾 Scripts horodatés** : Sortie dans `./svn_repo_mock/` avec timestamp
+- **🔍 Validation** : Vérification des placeholders au démarrage
 
-### Installation
+---
 
-1. **Cloner le repository**
-```bash
-git clone <url-du-repo>
-cd SQLGenerator
-```
+## 🚀 Démarrage Rapide
 
-2. **Compiler le projet**
-```bash
-mvn clean install
-```
+### 1️⃣ Prérequis
 
-3. **Lancer l'application**
+- Java 17+
+- Maven 3.8+
+
+### 2️⃣ Lancement
+
 ```bash
 mvn spring-boot:run
 ```
 
-4. **Accéder à la documentation Swagger**
-```
-http://localhost:8080/swagger-ui.html
-```
+L'application démarre sur **http://localhost:8080**
 
-## 📖 Utilisation
+### 3️⃣ Accès Swagger
 
-### Ajouter une nouvelle requête SQL
+Ouvrez votre navigateur : **http://localhost:8080/swagger-ui/index.html**
 
-Le système scanne automatiquement les fichiers SQL dans `src/main/resources/sql/` au démarrage.
+**Note** : Avec SpringDoc OpenAPI 2.2.0, l'URL est `/swagger-ui/index.html` (et non `/swagger-ui.html`)
 
-**Exemple minimal** : `src/main/resources/sql/update-person-name.sql`
+---
 
-```sql
--- @id: update-person-name
--- @name: Mise à jour du nom d'une personne
--- @description: Met à jour le nom d'une personne dans la table PERSON.
--- @tags: person,update,unitaire
--- @param: person_id|text|ID Personne|true
--- @param: name|text|Nom|true
-
-UPDATE PERSON SET NAME = {{name}} WHERE PERSON_ID = {{person_id}};
-```
-
-**Résultat** :
-- ✅ Endpoint automatique : `POST /api/patch/update-person-name`
-- ✅ Formulaire Swagger avec champs `ticket`, `executionType`, `person_id`, `name`
-- ✅ Fichier SQL généré dans `./svn_repo_mock/`
-
-📚 **Guide complet** : Voir [GUIDE_AJOUT_REQUETE.md](GUIDE_AJOUT_REQUETE.md)
-
-### Utiliser l'API
-
-#### Via Swagger UI (recommandé)
-
-1. Ouvrez `http://localhost:8080/swagger-ui.html`
-2. Trouvez votre endpoint (filtrez par tags si nécessaire)
-3. Cliquez sur **"Try it out"**
-4. Remplissez le formulaire
-5. Cliquez sur **"Execute"**
-6. Le fichier SQL est téléchargé
-
-#### Via requête HTTP directe
-
-```bash
-curl -X POST "http://localhost:8080/api/patch/update-person-name" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "ticket=dc905fff-27a6-452f-aa0d-360c6c37b94a&person_id=001&name=roland&executionType=unitaire"
-```
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Application Start                     │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│              QueryService.init()                         │
-│  • Scan fichiers SQL (resources/sql/*.sql)              │
-│  • Parse métadonnées via QueryMetadataParser            │
-│  • Charge QueryDefinition en mémoire                    │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│         PatchOpenApiCustomizer                           │
-│  • Génère endpoints Swagger dynamiquement               │
-│  • Crée formulaires pour chaque requête                 │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│              Swagger UI disponible                       │
-│         http://localhost:8080/swagger-ui.html            │
-└─────────────────────────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│         POST /api/patch/{id}                            │
-│  • PatchController reçoit les paramètres                │
-│  • QueryService génère le fichier SQL                   │
-│  • Retourne le fichier en téléchargement                │
-└─────────────────────────────────────────────────────────┘
-```
-
-## 📁 Structure du projet
+## 📂 Structure du Projet
 
 ```
 SQLGenerator/
 ├── src/main/
 │   ├── java/com/sqlgenerator/backend/
-│   │   ├── config/
-│   │   │   ├── OpenApiConfig.java              # Configuration Swagger
-│   │   │   └── PatchOpenApiCustomizer.java     # Génération dynamique endpoints
 │   │   ├── controller/
-│   │   │   └── PatchController.java            # Endpoint REST générique
-│   │   ├── model/
-│   │   │   ├── QueryDefinition.java            # Modèle requête
-│   │   │   └── ParameterDefinition.java       # Modèle paramètre
+│   │   │   ├── TemplateController.java    # API des templates (GET /api/templates)
+│   │   │   └── ScriptController.java      # API de génération (POST /api/scripts/{id})
 │   │   ├── service/
-│   │   │   ├── QueryService.java               # Service principal
-│   │   │   └── QueryMetadataParser.java       # Parser métadonnées SQL
-│   │   └── SqlGeneratorApplication.java        # Point d'entrée
+│   │   │   ├── TemplateService.java       # Gestion des templates
+│   │   │   ├── TemplateMetadataParser.java # Parsing des métadonnées SQL
+│   │   │   ├── FormSchemaService.java     # Génération des schémas pour le front
+│   │   │   ├── SqlFileBuilder.java        # Construction des fichiers SQL
+│   │   │   └── TemplateConstants.java     # Constantes centralisées
+│   │   └── model/
+│   │       ├── TemplateDefinition.java    # Modèle d'un template SQL
+│   │       ├── ParameterDefinition.java   # Modèle d'un paramètre
+│   │       ├── FormSchema.java            # Schéma pour le frontend
+│   │       └── FormField.java             # Champ de formulaire
 │   └── resources/
-│       ├── sql/                                # Templates SQL
-│       │   ├── update-person-name.sql
-│       │   └── update-cedem-role.sql
-│       └── application.properties              # Configuration Spring
-├── svn_repo_mock/                              # Fichiers générés
-├── GUIDE_AJOUT_REQUETE.md                      # Guide d'utilisation
-└── README.md                                   # Ce fichier
+│       └── templates/                     # ← Vos fichiers SQL ici
+│           ├── update-person-name.sql
+│           └── activate-contrats.sql
+└── sql_uploads/                           # Upload de nouveaux templates (futur)
 ```
 
-## 🔧 Configuration
+---
 
-### Port de l'application
+## 📝 Créer un Template SQL
 
-Modifier dans `src/main/resources/application.properties` :
+### Exemple Minimal
 
-```properties
-server.port=8080
-```
-
-### Configuration Swagger
-
-Les options Swagger sont dans `application.properties` :
-
-```properties
-springdoc.swagger-ui.operations-sorter=method
-springdoc.swagger-ui.tags-sorter=alpha
-springdoc.swagger-ui.filter=true
-```
-
-## 📝 Format des métadonnées SQL
-
-Chaque fichier SQL doit commencer par des métadonnées en commentaires :
-
-```sql
--- @id: identifiant-unique              # Obligatoire
--- @name: Nom descriptif                 # Affiché dans Swagger
--- @description: Description détaillée   # Affiché dans Swagger
--- @tags: tag1,tag2,tag3                 # Pour le filtrage
--- @param: nom|type|label|required      # Définition paramètre
-```
-
-### Types de paramètres
-
-- `text` : Chaîne de caractères → `'valeur'`
-- `number` : Nombre → `123`
-- `date` : Date → `'2024-01-01'`
-
-### Placeholders
-
-Utilisez `{{nom_parametre}}` dans votre SQL :
-
-```sql
-UPDATE table SET colonne = {{name}} WHERE id = {{id}};
-```
-
-## 🧪 Exemples
-
-### Exemple 1 : Requête simple
-
-**Fichier** : `src/main/resources/sql/update-person-name.sql`
+**Fichier** : `src/main/resources/templates/update-person-name.sql`
 
 ```sql
 -- @id: update-person-name
 -- @name: Mise à jour du nom d'une personne
 -- @description: Met à jour le nom d'une personne dans la table PERSON.
--- @tags: person,update,unitaire
--- @param: person_id|text|ID Personne|true
--- @param: name|text|Nom|true
+-- @tags: person, update
+-- @param: person_id | ID de la personne | number | required
+-- @param: name | Nouveau nom | text | required
 
-UPDATE PERSON SET NAME = {{name}} WHERE PERSON_ID = {{person_id}};
+UPDATE PERSON
+SET NAME = '{{name}}'
+WHERE PERSON_ID = {{person_id}};
 ```
 
-### Exemple 2 : Bloc PL/SQL avec transaction
+### Métadonnées Disponibles
 
-Voir `src/main/resources/sql/update-cedem-role.sql` pour un exemple complet avec :
-- Bloc DECLARE/BEGIN/END
-- Logs avant/après
-- Gestion d'erreurs avec ROLLBACK
-- Commit conditionnel
+| Métadonnée | Description | Obligatoire |
+|------------|-------------|-------------|
+| `@id` | Identifiant unique (déduit du nom de fichier si absent) | ❌ |
+| `@name` | Nom lisible du template | ✅ |
+| `@description` | Description fonctionnelle | ❌ |
+| `@tags` | Tags séparés par des virgules | ❌ |
+| `@param` | Définition d'un paramètre : `nom \| label \| type \| required/optional` | ✅ (si placeholders) |
+| `@param-file` | Paramètre fichier pour clause IN : `nom \| label \| required` | ❌ |
 
-## 🐛 Dépannage
+### Types de Paramètres
 
-### L'endpoint n'apparaît pas dans Swagger
+- `text` : Texte libre
+- `number` : Nombre (integer/decimal)
+- `date` : Date (format `DD/MM/YY`)
 
-- ✅ Vérifiez que le fichier SQL est dans `src/main/resources/sql/`
-- ✅ Vérifiez la présence de `-- @id:` dans le fichier
-- ✅ Redémarrez l'application
-- ✅ Consultez les logs pour les erreurs de parsing
+### Placeholders SQL
 
-### Erreur 404 "Query not found"
-
-- ✅ Vérifiez que l'ID dans l'URL correspond au `-- @id:` du fichier SQL
-- ✅ Vérifiez que l'application a bien démarré
-
-### Erreur 415 "Unsupported Media Type"
-
-- ✅ Utilisez `Content-Type: application/x-www-form-urlencoded`
-- ✅ Envoyez les paramètres en format formulaire, pas en JSON
-
-## 📊 Statistiques du projet
-
-- **Fichiers Java** : 8 fichiers (~518 lignes)
-- **Fichiers SQL** : 2 templates (exemples)
-- **Configuration** : Minimaliste et claire
-
-## 🤝 Contribution
-
-1. Créez un fichier SQL dans `src/main/resources/sql/`
-2. Ajoutez les métadonnées requises
-3. Testez dans Swagger UI
-4. Le système génère automatiquement l'endpoint !
-
-## 📄 Licence
-
-GeoInc.com
-
-## 👥 Auteurs
-
-Équipe SQL Generator
+Utilisez `{{nom_parametre}}` dans votre SQL. Ils seront remplacés automatiquement par les valeurs fournies.
 
 ---
 
-**Documentation complète** : Voir [GUIDE_AJOUT_REQUETE.md](GUIDE_AJOUT_REQUETE.md)
+## 🔌 Utilisation de l'API
 
+### 1️⃣ Lister les Templates Disponibles
+
+```http
+GET /api/templates
+```
+
+**Réponse** : Liste des templates avec leurs schémas (modes unitaire/masse, champs, etc.)
+
+### 2️⃣ Obtenir un Template Spécifique
+
+```http
+GET /api/templates/{id}
+```
+
+**Réponse** : Schéma complet du template (pour construire un formulaire dynamique)
+
+### 3️⃣ Obtenir le JSON de Test
+
+```http
+GET /api/templates/{id}/request-body?mode=unitaire
+GET /api/templates/{id}/request-body?mode=masse
+```
+
+**Réponse** : JSON prêt à copier-coller dans Swagger pour tester
+
+### 4️⃣ Générer un Script SQL (Mode Unitaire)
+
+```http
+POST /api/scripts/{id}
+Content-Type: application/json
+
+{
+  "ticket": "JIRA-123",
+  "executionType": "unitaire",
+  "person_id": "42",
+  "name": "Jean Dupont"
+}
+```
+
+**Réponse** : Téléchargement du fichier SQL généré
+
+### 5️⃣ Générer un Script SQL (Mode Masse)
+
+```http
+POST /api/scripts/{id}/masse
+Content-Type: multipart/form-data
+
+ticket=JIRA-123
+masseFile=<fichier.csv>
+```
+
+**Fichier CSV** (1 ligne = 1 requête) :
+
+```
+42,Jean Dupont
+43,Marie Martin
+44,Pierre Durand
+```
+
+---
+
+## 🧪 Tests
+
+Exécuter les tests unitaires :
+
+```bash
+mvn test
+```
+
+Exécuter un test spécifique :
+
+```bash
+mvn test -Dtest=TemplateMetadataParserTest
+```
+
+---
+
+## 📚 Documentation Complémentaire
+
+- **[GUIDE_AJOUT_REQUETE.md](GUIDE_AJOUT_REQUETE.md)** : Guide détaillé pour ajouter un nouveau template
+- **[FLOWCHART.md](FLOWCHART.md)** : Diagramme du flux de traitement
+- **[EXPORT_OPENAPI_SCHEMA.md](EXPORT_OPENAPI_SCHEMA.md)** : Exporter le schéma OpenAPI
+- **[COMMANDES_PORT_8080.md](COMMANDES_PORT_8080.md)** : Gérer les processus sur le port 8080
+
+---
+
+## 🛠️ Configuration
+
+### Changer le Port
+
+Modifier `src/main/resources/application.properties` :
+
+```properties
+server.port=8081
+```
+
+### Changer le Répertoire de Sortie
+
+Modifier `TemplateConstants.OUTPUT_SCRIPTS_PATH` :
+
+```java
+public static final String OUTPUT_SCRIPTS_PATH = "./mon_repertoire/";
+```
+
+---
+
+## 🤝 Contribution
+
+1. Créer une branche feature : `git checkout -b feature/ma-fonctionnalite`
+2. Commit : `git commit -m "feat: ajout de ma fonctionnalité"`
+3. Push : `git push origin feature/ma-fonctionnalite`
+4. Créer une Pull Request
+
+---
+
+## 📄 Licence
+
+Ce projet est sous licence MIT.
+
+---
+
+## 🆘 Dépannage
+
+### Le serveur ne démarre pas
+
+```bash
+# Vérifier si le port 8080 est déjà utilisé
+Get-NetTCPConnection -LocalPort 8080
+
+# Tuer le processus
+Stop-Process -Id <PID> -Force
+```
+
+Voir [COMMANDES_PORT_8080.md](COMMANDES_PORT_8080.md) pour plus de détails.
+
+### Les templates ne sont pas chargés
+
+Vérifier que vos fichiers `.sql` sont dans `src/main/resources/templates/` et respectent le format des métadonnées.
+
+### Erreur "Placeholder not defined"
+
+Tous les `{{placeholders}}` dans le SQL doivent avoir une ligne `@param` ou `@param-file` correspondante.
+
+---
+
+**Développé avec ❤️ pour simplifier la génération de scripts SQL**

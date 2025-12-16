@@ -1,7 +1,7 @@
 package com.sqlgenerator.backend.service;
 
 import com.sqlgenerator.backend.model.ParameterDefinition;
-import com.sqlgenerator.backend.model.QueryDefinition;
+import com.sqlgenerator.backend.model.TemplateDefinition;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -10,7 +10,7 @@ import java.io.IOException;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests unitaires pour QueryMetadataParser.
+ * Tests unitaires pour TemplateMetadataParser.
  * 
  * Ces tests vérifient que le parsing des métadonnées SQL fonctionne correctement
  * et que les cas limites sont bien gérés.
@@ -20,20 +20,20 @@ import static org.junit.jupiter.api.Assertions.*;
  * - Validation des formats de métadonnées
  * - Détection précoce des erreurs de configuration
  */
-class QueryMetadataParserTest {
+class TemplateMetadataParserTest {
 
-    private QueryMetadataParser parser;
+    private TemplateMetadataParser parser;
 
     @BeforeEach
     void setUp() {
-        parser = new QueryMetadataParser();
+        parser = new TemplateMetadataParser();
     }
 
     @Test
     void testParseSqlFile_WithAllMetadata() throws IOException {
         // Given: Fichier SQL complet avec toutes les métadonnées
         // When
-        QueryDefinition query = parser.parseSqlFile("test-complete.sql");
+        TemplateDefinition query = parser.parseSqlFile("test-complete.sql");
         
         // Then
         assertNotNull(query);
@@ -45,14 +45,14 @@ class QueryMetadataParserTest {
         assertTrue(query.getTags().contains("tag2"));
         assertTrue(query.getTags().contains("tag3"));
         assertEquals(2, query.getParameters().size());
-        assertEquals("test-complete.sql", query.getSqlFile());
+        assertEquals("test-complete.sql", query.getSqlFilename());
     }
 
     @Test
     void testParseSqlFile_WithFileParameter() throws IOException {
         // Given: Fichier avec paramètre fichier pour IN
         // When
-        QueryDefinition query = parser.parseSqlFile("test-file-param.sql");
+        TemplateDefinition query = parser.parseSqlFile("test-file-param.sql");
         
         // Then
         assertNotNull(query);
@@ -96,7 +96,7 @@ class QueryMetadataParserTest {
     void testParseSqlFile_WithOptionalMetadata() throws IOException {
         // Given: Fichier avec seulement l'ID obligatoire
         // When
-        QueryDefinition query = parser.parseSqlFile("test-minimal.sql");
+        TemplateDefinition query = parser.parseSqlFile("test-minimal.sql");
         
         // Then
         assertNotNull(query);
@@ -112,7 +112,7 @@ class QueryMetadataParserTest {
     void testParseSqlFile_MixedParameterTypes() throws IOException {
         // Given: Mélange de paramètres normaux et fichier
         // When
-        QueryDefinition query = parser.parseSqlFile("test-mixed-params.sql");
+        TemplateDefinition query = parser.parseSqlFile("test-mixed-params.sql");
         
         // Then
         assertEquals(3, query.getParameters().size());
@@ -131,7 +131,7 @@ class QueryMetadataParserTest {
     void testParseSqlFile_InvalidParameterFormat_Ignored() throws IOException {
         // Given: Paramètre avec format invalide (moins de 3 parties)
         // When
-        QueryDefinition query = parser.parseSqlFile("test-invalid-param.sql");
+        TemplateDefinition query = parser.parseSqlFile("test-invalid-param.sql");
         
         // Then: Seuls les paramètres valides sont parsés
         assertEquals(2, query.getParameters().size());
@@ -143,7 +143,7 @@ class QueryMetadataParserTest {
     void testParseSqlFile_RealWorldExample() throws IOException {
         // Given: Exemple réel (update-person-name.sql)
         // When
-        QueryDefinition query = parser.parseSqlFile("update-person-name.sql");
+        TemplateDefinition query = parser.parseSqlFile("update-person-name.sql");
         
         // Then
         assertEquals("update-person-name", query.getId());
@@ -171,7 +171,7 @@ class QueryMetadataParserTest {
     void testParseSqlFile_WithActivateContrats() throws IOException {
         // Given: Exemple réel avec paramètre fichier (activate-contrats.sql)
         // When
-        QueryDefinition query = parser.parseSqlFile("activate-contrats.sql");
+        TemplateDefinition query = parser.parseSqlFile("activate-contrats.sql");
         
         // Then
         assertEquals("activate-contrats", query.getId());

@@ -1,7 +1,8 @@
 package com.sqlgenerator.backend.controller;
 
-import com.sqlgenerator.backend.service.QueryConstants;
-import com.sqlgenerator.backend.service.QueryService;
+import com.sqlgenerator.backend.config.AppProperties;
+import com.sqlgenerator.backend.service.TemplateConstants;
+import com.sqlgenerator.backend.service.TemplateService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -31,24 +32,27 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Contrôleur REST pour la génération de patches SQL.
+ * Contrôleur REST pour la génération de scripts SQL.
  * 
  * Endpoints disponibles :
- * - POST /api/patches/{id} : mode unitaire (ou avec IN)
- * - POST /api/patches/{id}?mode=masse : mode masse (uniquement pour requêtes sans IN)
+ * - POST /api/scripts/{id} : mode unitaire (ou avec IN)
+ * - POST /api/scripts/{id}/masse : mode masse (uniquement pour templates sans IN)
  * 
- * Pour connaître les paramètres exacts d'une query, utilisez GET /api/queries/{id}
+ * Pour connaître les paramètres exacts d'un template, utilisez GET /api/templates/{id}
  */
 @RestController
-@RequestMapping("/api/patches")
+@RequestMapping("/api/scripts")
 @CrossOrigin(origins = "*")
-@io.swagger.v3.oas.annotations.tags.Tag(name = "SQL Patches", description = "Génération de patches SQL à partir de templates paramétrés")
-public class PatchController {
+@io.swagger.v3.oas.annotations.tags.Tag(name = "SQL Scripts", description = "Génération de scripts SQL à partir de templates paramétrés")
+public class ScriptController {
 
-    private static final Logger logger = LoggerFactory.getLogger(PatchController.class);
+    private static final Logger logger = LoggerFactory.getLogger(ScriptController.class);
 
     @Autowired
-    private QueryService queryService;
+    private TemplateService templateService;
+
+    @Autowired
+    private AppProperties appProperties;
 
     @PostMapping(value = "/{id}", consumes = {
             MediaType.APPLICATION_FORM_URLENCODED_VALUE, 
@@ -61,29 +65,29 @@ public class PatchController {
                     "Ce mode génère une seule requête SQL avec les paramètres fournis. " +
                     "Peut gérer les clauses IN (avec fichier) et les requêtes simples. " +
                     "\n\n" +
-                    "Vous pouvez utiliser du JSON (copiez-collez depuis GET /api/queries/{id}/request-body) " +
+                    "Vous pouvez utiliser du JSON (copiez-collez depuis GET /api/templates/{id}/request-body) " +
                     "ou des paramètres form-urlencoded. " +
                     "Pour les paramètres IN, le fichier doit être uploadé via multipart (même en mode JSON)."
     )
     @RequestBody(
             description = "Body JSON (optionnel). " +
-                    "⚠️ IMPORTANT : Pour obtenir le JSON correct avec les paramètres de cette query, " +
-                    "appelez d'abord GET /api/queries/{id}/request-body (ou ?mode=masse pour le mode masse) " +
+                    "⚠️ IMPORTANT : Pour obtenir le JSON correct avec les paramètres de ce template, " +
+                    "appelez d'abord GET /api/templates/{id}/request-body (ou ?mode=masse pour le mode masse) " +
                     "et copiez-collez directement le JSON retourné. " +
-                    "Chaque query a ses propres paramètres, donc l'exemple varie selon la query.",
+                    "Chaque template a ses propres paramètres, donc l'exemple varie selon le template.",
             required = false,
             content = @Content(
                     mediaType = MediaType.APPLICATION_JSON_VALUE,
                     schema = @Schema(
                             type = "object",
-                            description = "JSON avec les paramètres spécifiques à cette query. " +
-                                    "Pour connaître la structure exacte, appelez GET /api/queries/{id}/request-body " +
+                            description = "JSON avec les paramètres spécifiques à ce template. " +
+                                    "Pour connaître la structure exacte, appelez GET /api/templates/{id}/request-body " +
                                     "(ou ?mode=masse pour le mode masse) et copiez-collez le JSON retourné."
                     )
             )
     )
     public ResponseEntity<Resource> generatePatch(
-            @Parameter(description = "Identifiant de la query", required = true, example = "update-person-name")
+            @Parameter(description = "Identifiant du template", required = true, example = "update-person-name")
             @PathVariable String id,
             @Parameter(description = "Paramètres en form-urlencoded (alternative au JSON body)", required = false, hidden = true)
             @RequestParam(required = false) Map<String, String> formParams,
@@ -91,13 +95,13 @@ public class PatchController {
             @RequestParam(required = false) Map<String, MultipartFile> fileParams,
             @org.springframework.web.bind.annotation.RequestBody(required = false) Map<String, Object> jsonBody) {
         
-        var query = queryService.getQueryById(id);
-        if (query == null) {
-            logger.warn("Tentative d'accès à une query inexistante : {}", id);
+        var template = templateService.getTemplateById(id);
+        if (template == null) {
+            logger.warn("Tentative d'accès à un template inexistant : {}", id);
             return ResponseEntity.notFound().build();
         }
 
-        // Si JSON body est fourni, l'utiliser (copié depuis /api/queries/{id}/request-body -> unitBodyStructure)
+        // Si JSON body est fourni, l'utiliser (copié depuis /api/templates/{id}/request-body -> unitBodyStructure)
         // Sinon, utiliser formParams (pour Swagger ou form-urlencoded)
         Map<String, Object> params;
         String executionType;
@@ -112,7 +116,7 @@ public class PatchController {
             }
             // Les fichiers doivent toujours être passés via fileParams même en mode JSON
             if (fileParams != null && !fileParams.isEmpty()) {
-                for (var paramDef : query.getParameters()) {
+                for (var paramDef : template.getParameters()) {
                     if (paramDef != null && paramDef.isFile() && fileParams.containsKey(paramDef.getName())) {
                         Object fileValue = extractFileParameter(paramDef.getName(), fileParams);
                         if (fileValue != null) {
@@ -121,21 +125,21 @@ public class PatchController {
                     }
                 }
             }
-            executionType = params.getOrDefault("executionType", QueryConstants.EXECUTION_TYPE_UNITAIRE).toString();
+            executionType = params.getOrDefault("executionType", TemplateConstants.EXECUTION_TYPE_UNITAIRE).toString();
         } else {
             // Mode form-urlencoded/multipart (comportement existant)
-            executionType = formParams != null ? formParams.getOrDefault("executionType", QueryConstants.EXECUTION_TYPE_UNITAIRE) : QueryConstants.EXECUTION_TYPE_UNITAIRE;
-            params = extractParameters(query, formParams != null ? formParams : new HashMap<>(), fileParams != null ? fileParams : new HashMap<>());
+            executionType = formParams != null ? formParams.getOrDefault("executionType", TemplateConstants.EXECUTION_TYPE_UNITAIRE) : TemplateConstants.EXECUTION_TYPE_UNITAIRE;
+            params = extractParameters(template, formParams != null ? formParams : new HashMap<>(), fileParams != null ? fileParams : new HashMap<>());
         }
         
         try {
-            String fileName = queryService.generatePatchFile(id, executionType, params);
+            String fileName = templateService.generateScriptFile(id, executionType, params);
             return buildFileResponse(fileName);
         } catch (IllegalArgumentException e) {
-            logger.error("Erreur de validation pour query '{}' : {}", id, e.getMessage());
+            logger.error("Erreur de validation pour template '{}' : {}", id, e.getMessage());
             return ResponseEntity.badRequest().build();
         } catch (Exception e) {
-            logger.error("Erreur lors de la génération du patch pour query '{}' : {}", id, e.getMessage(), e);
+            logger.error("Erreur lors de la génération du script pour template '{}' : {}", id, e.getMessage(), e);
             return ResponseEntity.internalServerError().build();
         }
     }
@@ -149,31 +153,31 @@ public class PatchController {
             summary = "Générer un patch SQL (mode masse)",
             description = "Génère un fichier de patch SQL en mode masse. " +
                     "Ce mode génère N requêtes SQL (une par ligne du fichier CSV). " +
-                    "⚠️ Disponible uniquement pour les queries SANS paramètre IN. " +
+                    "⚠️ Disponible uniquement pour les templates SANS paramètre IN. " +
                     "\n\n" +
-                    "Vous pouvez utiliser du JSON (copiez-collez depuis GET /api/forms/{id}/body-structure/masse) " +
+                    "Vous pouvez utiliser du JSON (copiez-collez depuis GET /api/templates/{id}/request-body?mode=masse) " +
                     "ou des paramètres form-urlencoded. " +
                     "Le fichier CSV doit toujours être fourni via multipart (même en mode JSON)."
     )
     @RequestBody(
             description = "Body JSON (optionnel). " +
-                    "⚠️ IMPORTANT : Pour obtenir le JSON correct avec les paramètres de cette query, " +
-                    "appelez d'abord GET /api/forms/{id}/body-structure/masse et copiez-collez directement le JSON retourné. " +
+                    "⚠️ IMPORTANT : Pour obtenir le JSON correct avec les paramètres de ce template, " +
+                    "appelez d'abord GET /api/templates/{id}/request-body?mode=masse et copiez-collez directement le JSON retourné. " +
                     "Note : Le fichier CSV (masseFile) doit toujours être uploadé via multipart, même en mode JSON.",
             required = false,
             content = @Content(
                     mediaType = MediaType.APPLICATION_JSON_VALUE,
                     schema = @Schema(
                             type = "object",
-                            description = "JSON avec les paramètres spécifiques à cette query. " +
-                                    "Pour connaître la structure exacte, appelez GET /api/forms/{id}/body-structure/masse " +
+                            description = "JSON avec les paramètres spécifiques à ce template. " +
+                                    "Pour connaître la structure exacte, appelez GET /api/templates/{id}/request-body?mode=masse " +
                                     "et copiez-collez le JSON retourné. " +
                                     "Le fichier CSV doit être uploadé séparément via multipart/form-data."
                     )
             )
     )
     public ResponseEntity<Resource> generatePatchMasse(
-            @Parameter(description = "Identifiant de la query", required = true, example = "update-person-name")
+            @Parameter(description = "Identifiant du template", required = true, example = "update-person-name")
             @PathVariable String id,
             @Parameter(description = "Ticket (optionnel si fourni dans JSON body)", required = false, hidden = true)
             @RequestParam(required = false) String ticket,
@@ -181,34 +185,34 @@ public class PatchController {
             @RequestParam(value = "masseFile", required = false) MultipartFile masseFile,
             @org.springframework.web.bind.annotation.RequestBody(required = false) Map<String, Object> jsonBody) {
         
-        var query = queryService.getQueryById(id);
-        if (query == null) {
-            logger.warn("Tentative d'accès à une query inexistante (masse) : {}", id);
+        var template = templateService.getTemplateById(id);
+        if (template == null) {
+            logger.warn("Tentative d'accès à un template inexistant (masse) : {}", id);
             return ResponseEntity.notFound().build();
         }
 
         // Vérifier que le mode masse est disponible (pas de paramètre IN)
-        boolean hasInParameter = query.getParameters() != null &&
-                query.getParameters().stream().anyMatch(p -> p != null && p.isFile());
+        boolean hasInParameter = template.getParameters() != null &&
+                template.getParameters().stream().anyMatch(p -> p != null && p.isFile());
         if (hasInParameter) {
-            logger.warn("Tentative d'utilisation du mode masse sur une query avec IN : {}", id);
+            logger.warn("Tentative d'utilisation du mode masse sur un template avec IN : {}", id);
             return ResponseEntity.badRequest().build();
         }
 
         // Vérifier que le fichier CSV est présent
         if (masseFile == null || masseFile.isEmpty()) {
-            logger.warn("Fichier CSV manquant ou vide pour query '{}' en mode masse", id);
+            logger.warn("Fichier CSV manquant ou vide pour template '{}' en mode masse", id);
             return ResponseEntity.badRequest().build();
         }
 
         try {
             // Parser le fichier CSV
             List<String> csvLines = parseFileContent(masseFile);
-            logger.debug("Fichier CSV parsé : {} ligne(s) pour query '{}'", csvLines.size(), id);
+            logger.debug("Fichier CSV parsé : {} ligne(s) pour template '{}'", csvLines.size(), id);
             
             Map<String, Object> params = new HashMap<>();
             
-            // Si JSON body est fourni, l'utiliser (copié depuis /api/forms/{id}/body-structure -> massBodyStructure)
+            // Si JSON body est fourni, l'utiliser (copié depuis /api/templates/{id}/request-body?mode=masse -> massBodyStructure)
             if (jsonBody != null && !jsonBody.isEmpty()) {
                 // Mode JSON : convertir en Map pour le traitement
                 for (Map.Entry<String, Object> entry : jsonBody.entrySet()) {
@@ -226,24 +230,24 @@ public class PatchController {
             
             params.put("masseFile", csvLines);
             
-            String fileName = queryService.generatePatchFile(id, QueryConstants.EXECUTION_TYPE_MASSE, params);
+            String fileName = templateService.generateScriptFile(id, TemplateConstants.EXECUTION_TYPE_MASSE, params);
             return buildFileResponse(fileName);
         } catch (IllegalArgumentException e) {
-            logger.error("Erreur de validation pour query '{}' (masse) : {}", id, e.getMessage());
+            logger.error("Erreur de validation pour template '{}' (masse) : {}", id, e.getMessage());
             return ResponseEntity.badRequest().build();
         } catch (Exception e) {
-            logger.error("Erreur lors de la génération du patch (masse) pour query '{}' : {}", id, e.getMessage(), e);
+            logger.error("Erreur lors de la génération du script (masse) pour template '{}' : {}", id, e.getMessage(), e);
             return ResponseEntity.internalServerError().build();
         }
     }
 
-    private Map<String, Object> extractParameters(com.sqlgenerator.backend.model.QueryDefinition query,
+    private Map<String, Object> extractParameters(com.sqlgenerator.backend.model.TemplateDefinition template,
                                                    Map<String, String> formParams,
                                                    Map<String, MultipartFile> fileParams) {
         Map<String, Object> params = new HashMap<>();
         
-        if (query.getParameters() != null) {
-            for (var paramDef : query.getParameters()) {
+        if (template.getParameters() != null) {
+            for (var paramDef : template.getParameters()) {
                 if (paramDef != null && paramDef.getName() != null) {
                     Object value = extractParameterValue(paramDef, formParams, fileParams);
                     if (value != null) {
@@ -289,7 +293,7 @@ public class PatchController {
 
     private ResponseEntity<Resource> buildFileResponse(String fileName) {
         try {
-            Path path = Paths.get("./svn_repo_mock/" + fileName);
+            Path path = Paths.get(appProperties.getOutputScriptsPath() + fileName);
             Resource resource = new UrlResource(Objects.requireNonNull(path.toUri()));
 
             return ResponseEntity.ok()

@@ -1,6 +1,6 @@
 package com.sqlgenerator.backend.service;
 
-import com.sqlgenerator.backend.model.QueryDefinition;
+import com.sqlgenerator.backend.model.TemplateDefinition;
 import com.sqlgenerator.backend.model.ParameterDefinition;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
@@ -14,7 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Parse les métadonnées des fichiers SQL pour créer des QueryDefinition.
+ * Parse les métadonnées des fichiers SQL pour créer des TemplateDefinition.
  * 
  * Format des métadonnées supporté :
  * - -- @id: identifiant unique
@@ -25,12 +25,12 @@ import org.slf4j.LoggerFactory;
  * - -- @param-file: nom|type|label|required (paramètre fichier pour IN)
  */
 @Service
-public class QueryMetadataParser {
+public class TemplateMetadataParser {
 
-    private static final Logger logger = LoggerFactory.getLogger(QueryMetadataParser.class);
+    private static final Logger logger = LoggerFactory.getLogger(TemplateMetadataParser.class);
 
     /**
-     * Parse un fichier SQL et extrait les métadonnées pour créer une QueryDefinition.
+     * Parse un fichier SQL et extrait les métadonnées pour créer une TemplateDefinition.
      * 
      * Pourquoi parser les métadonnées dans les commentaires SQL ?
      * - Permet de définir les requêtes directement dans les fichiers SQL
@@ -38,10 +38,10 @@ public class QueryMetadataParser {
      * - Syntaxe SQL native avec coloration dans l'IDE
      * - Facilite la maintenance : tout est au même endroit
      */
-    public QueryDefinition parseSqlFile(String filename) throws IOException {
+    public TemplateDefinition parseSqlFile(String filename) throws IOException {
         logger.debug("Parsing du fichier SQL : {}", filename);
         
-        ClassPathResource resource = new ClassPathResource("sql/" + filename);
+        ClassPathResource resource = new ClassPathResource(TemplateConstants.TEMPLATES_DIR + filename);
         String sqlContent = new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         
         Map<String, String> metadata = extractMetadata(sqlContent);
@@ -50,7 +50,7 @@ public class QueryMetadataParser {
         logger.debug("Fichier '{}' : {} métadonnée(s) et {} paramètre(s) trouvé(s)", 
                 filename, metadata.size(), parameters.size());
         
-        QueryDefinition query = new QueryDefinition();
+        TemplateDefinition template = new TemplateDefinition();
         
         // Valider que l'ID est présent
         String id = metadata.get("id");
@@ -67,20 +67,20 @@ public class QueryMetadataParser {
             );
         }
         
-        query.setId(id);
-        query.setName(metadata.get("name"));
-        query.setDescription(metadata.get("description"));
+        template.setId(id);
+        template.setName(metadata.get("name"));
+        template.setDescription(metadata.get("description"));
         
         String tagsStr = metadata.get("tags");
         if (tagsStr != null && !tagsStr.trim().isEmpty()) {
             List<String> tags = Arrays.asList(tagsStr.split(","));
-            query.setTags(tags.stream().map(String::trim).collect(Collectors.toList()));
+            template.setTags(tags.stream().map(String::trim).collect(Collectors.toList()));
         }
         
-        query.setSqlFile(filename);
-        query.setParameters(parameters != null ? parameters : new ArrayList<>());
+        template.setSqlFilename(filename);
+        template.setParameters(parameters != null ? parameters : new ArrayList<>());
         
-        return query;
+        return template;
     }
 
     private Map<String, String> extractMetadata(String sqlContent) {

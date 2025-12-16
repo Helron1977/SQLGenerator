@@ -1,6 +1,8 @@
 package com.sqlgenerator.backend.service;
 
-import com.sqlgenerator.backend.model.QueryDefinition;
+import com.sqlgenerator.backend.config.AppProperties;
+import com.sqlgenerator.backend.model.TemplateDefinition;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -15,7 +17,7 @@ import java.util.Map;
  * Service dédié à la construction et à l'écriture des fichiers SQL générés.
  * 
  * Séparation des responsabilités :
- * - QueryService : logique métier (parsing, remplacement placeholders)
+ * - TemplateService : logique métier (parsing, remplacement placeholders)
  * - SqlFileBuilder : génération de fichiers (en-tête, nommage, écriture)
  * 
  * Pourquoi cette séparation ?
@@ -26,7 +28,9 @@ import java.util.Map;
 @Service
 public class SqlFileBuilder {
 
-    private static final String REPO_PATH = "./svn_repo_mock/";
+    @Autowired
+    private AppProperties appProperties;
+
 
     /**
      * Construit le contenu complet du fichier SQL (en-tête + SQL).
@@ -36,10 +40,10 @@ public class SqlFileBuilder {
      * 2. Ligne vide
      * 3. SQL traité (avec placeholders remplacés)
      */
-    public String buildCompleteFile(QueryDefinition query, String executionType, 
+    public String buildCompleteFile(TemplateDefinition template, String executionType, 
                                     Map<String, Object> params, String sql) {
         StringBuilder content = new StringBuilder();
-        content.append(buildHeader(query, executionType, params));
+        content.append(buildHeader(template, executionType, params));
         content.append("\n");
         content.append(sql);
         return content.toString();
@@ -50,16 +54,16 @@ public class SqlFileBuilder {
      * 
      * Pourquoi un en-tête dans chaque fichier généré ?
      * - Traçabilité : savoir quand et pour quel ticket le fichier a été généré
-     * - Identification : retrouver facilement la requête source
+     * - Identification : retrouver facilement le template source
      * - Audit : historique des générations
      * 
      * Format modifiable ici sans impact sur la logique métier.
      */
-    public String buildHeader(QueryDefinition query, String executionType, Map<String, Object> params) {
+    public String buildHeader(TemplateDefinition template, String executionType, Map<String, Object> params) {
         StringBuilder header = new StringBuilder();
-        header.append("-- Fichier de Patch Généré le ").append(LocalDateTime.now()).append("\n");
-        header.append("-- Requête: ").append(query.getName()).append("\n");
-        header.append("-- ID: ").append(query.getId()).append("\n");
+        header.append("-- Fichier de Script Généré le ").append(LocalDateTime.now()).append("\n");
+        header.append("-- Template: ").append(template.getName()).append("\n");
+        header.append("-- ID: ").append(template.getId()).append("\n");
         header.append("-- Ticket: ").append(params.get("ticket")).append("\n");
         header.append("-- Type: ").append(executionType).append("\n");
         return header.toString();
@@ -68,23 +72,23 @@ public class SqlFileBuilder {
     /**
      * Génère le nom de fichier avec timestamp.
      * 
-     * Format : {queryId}_{executionType}_{timestamp}.sql
+     * Format : {templateId}_{executionType}_{timestamp}.sql
      * 
      * Pourquoi inclure le timestamp ?
      * - Évite les collisions si plusieurs fichiers sont générés rapidement
      * - Permet de retrouver facilement un fichier par date
      * - Facilite le tri chronologique
      */
-    public String generateFileName(String queryId, String executionType) {
+    public String generateFileName(String templateId, String executionType) {
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
-        return String.format("%s_%s_%s.sql", queryId, executionType, timestamp);
+        return String.format("%s_%s_%s.sql", templateId, executionType, timestamp);
     }
 
     /**
      * Écrit le fichier SQL sur le disque.
      */
     public void writeFile(String fileName, String content) throws IOException {
-        Path path = Paths.get(REPO_PATH, fileName);
+        Path path = Paths.get(appProperties.getOutputScriptsPath(), fileName);
         Files.write(path, content.getBytes());
     }
 
@@ -92,10 +96,10 @@ public class SqlFileBuilder {
      * Construit et écrit le fichier SQL complet.
      * Retourne le nom du fichier généré.
      */
-    public String buildAndWriteFile(QueryDefinition query, String executionType, 
+    public String buildAndWriteFile(TemplateDefinition template, String executionType, 
                                     Map<String, Object> params, String sql) throws IOException {
-        String fileContent = buildCompleteFile(query, executionType, params, sql);
-        String fileName = generateFileName(query.getId(), executionType);
+        String fileContent = buildCompleteFile(template, executionType, params, sql);
+        String fileName = generateFileName(template.getId(), executionType);
         writeFile(fileName, fileContent);
         return fileName;
     }
