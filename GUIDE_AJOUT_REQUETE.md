@@ -29,7 +29,7 @@ Le fichier SQL doit commencer par des **métadonnées en commentaires**, suivies
 #### Format des métadonnées
 
 ```sql
--- @id: identifiant-unique
+-- @id: identifiant-unique          # Optionnel : si absent, extrait du nom du fichier
 -- @name: Nom descriptif de la requête
 -- @description: Description détaillée de ce que fait la requête
 -- @tags: tag1,tag2,tag3
@@ -42,12 +42,16 @@ UPDATE table SET colonne = {{nom_parametre}} WHERE id = {{autre_param}};
 
 ### 1.3 Détails des métadonnées
 
-#### `-- @id:` (obligatoire)
+#### `-- @id:` (optionnel)
 Identifiant unique utilisé pour :
 - L'URL de l'endpoint : `/api/patch/{id}`
 - Le nom du fichier généré : `{id}_{executionType}_{timestamp}.sql`
 
-**Exemple** : `-- @id: update-person-name`
+**Si `-- @id:` n'est pas présent** : L'ID est automatiquement extrait du nom du fichier (sans extension `.sql`)
+
+**Exemple** : 
+- Fichier `update-person-name.sql` → ID = `update-person-name` (automatique)
+- Ou avec `-- @id: update-person-name` → ID = `update-person-name` (explicite)
 
 #### `-- @name:`
 Nom affiché dans Swagger UI comme titre de l'endpoint.
@@ -220,8 +224,9 @@ UPDATE PERSON SET NAME = 'roland' WHERE PERSON_ID = '001';
 ## Règles et bonnes pratiques
 
 ### Obligatoire
-- ✅ Le fichier doit contenir `-- @id:` (sinon erreur au démarrage)
 - ✅ L'ID doit être unique (sinon conflit d'endpoints)
+  - L'ID peut être fourni via `-- @id:` dans les métadonnées
+  - Ou extrait automatiquement du nom du fichier (sans `.sql`)
 - ✅ Les noms de paramètres dans `-- @param:` doivent correspondre aux placeholders `{{nom}}`
 
 ### Recommandé
@@ -257,12 +262,15 @@ SET count = {{count}};  -- Devient: SET count = 10; (si type=number)
 
 ### L'endpoint n'apparaît pas dans Swagger
 - Vérifiez que le fichier SQL est dans `src/main/resources/sql/`
-- Vérifiez que le fichier contient `-- @id:` valide
+- Vérifiez que le nom du fichier se termine par `.sql` (l'ID sera extrait automatiquement)
+- Ou vérifiez que `-- @id:` est présent et valide si vous l'utilisez
 - Redémarrez l'application
 - Consultez les logs pour les erreurs de parsing
 
 ### Erreur "Query not found"
-- Vérifiez que l'ID dans l'URL correspond au `-- @id:` dans le fichier SQL
+- Vérifiez que l'ID dans l'URL correspond :
+  - Au `-- @id:` dans le fichier SQL (si présent)
+  - Ou au nom du fichier sans extension `.sql` (si `-- @id:` absent)
 - Vérifiez que l'application a bien démarré et chargé le fichier
 
 ### Les paramètres ne s'affichent pas correctement
@@ -277,8 +285,8 @@ SET count = {{count}};  -- Devient: SET count = 10; (si type=number)
 
 ## Résumé rapide
 
-1. ✅ Créer `src/main/resources/sql/mon-requete.sql`
-2. ✅ Ajouter les métadonnées (`-- @id:`, `-- @name:`, `-- @param:`, etc.)
+1. ✅ Créer `src/main/resources/sql/mon-requete.sql` (le nom du fichier devient l'ID)
+2. ✅ Ajouter les métadonnées (`-- @name:`, `-- @param:`, etc.) - `-- @id:` est optionnel
 3. ✅ Écrire la requête SQL avec `{{placeholders}}`
 4. ✅ Redémarrer l'application
 5. ✅ Tester dans Swagger UI : `http://localhost:8080/swagger-ui.html`

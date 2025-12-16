@@ -1,5 +1,6 @@
 package com.sqlgenerator.backend.controller;
 
+import com.sqlgenerator.backend.model.QueryDefinition;
 import com.sqlgenerator.backend.service.QueryConstants;
 import com.sqlgenerator.backend.service.QueryService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,6 +47,27 @@ public class PatchController {
 
     @Autowired
     private QueryService queryService;
+
+    /**
+     * Liste toutes les queries disponibles.
+     * Utile pour le front React qui peut générer dynamiquement les formulaires.
+     */
+    @GetMapping("/queries")
+    @io.swagger.v3.oas.annotations.Operation(
+            summary = "Liste toutes les queries disponibles",
+            description = "Retourne la liste de toutes les queries SQL disponibles avec leurs métadonnées " +
+                    "(nom, description, tags, paramètres). Utile pour découvrir les endpoints disponibles " +
+                    "et générer dynamiquement des formulaires dans le front-end."
+    )
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200",
+                    description = "Liste des queries disponibles"
+            )
+    })
+    public ResponseEntity<List<QueryDefinition>> getAllQueries() {
+        return ResponseEntity.ok(queryService.getAllQueries());
+    }
 
     @PostMapping(value = "/{id}", consumes = {MediaType.APPLICATION_FORM_URLENCODED_VALUE, MediaType.MULTIPART_FORM_DATA_VALUE})
     @io.swagger.v3.oas.annotations.Hidden

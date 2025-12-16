@@ -11,16 +11,26 @@ import io.swagger.v3.oas.models.parameters.RequestBody;
 import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
 import org.springdoc.core.customizers.OpenApiCustomizer;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 
 import java.util.List;
 
-@Component
+/**
+ * Customizer OpenAPI pour générer dynamiquement les endpoints du SQL Generator.
+ * 
+ * IMPORTANT : Ce customizer n'est plus un @Component pour éviter qu'il s'applique
+ * à tous les groupes. Il est ajouté uniquement au groupe "sql-generator" via
+ * OpenApiConfig.sqlGeneratorGroup().
+ */
 public class PatchOpenApiCustomizer implements OpenApiCustomizer {
 
-    @Autowired
     private QueryService queryService;
+
+    /**
+     * Setter pour injecter QueryService (utilisé par OpenApiConfig).
+     */
+    public void setQueryService(QueryService queryService) {
+        this.queryService = queryService;
+    }
 
     @Override
     public void customise(OpenAPI openApi) {

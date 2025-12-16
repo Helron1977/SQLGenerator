@@ -66,30 +66,39 @@ class QueryMetadataParserTest {
     }
 
     @Test
-    void testParseSqlFile_MissingId_ThrowsException() {
-        // Given: Fichier sans @id (obligatoire)
-        // When/Then
-        IllegalArgumentException exception = assertThrows(
-            IllegalArgumentException.class,
-            () -> parser.parseSqlFile("test-no-id.sql")
-        );
+    void testParseSqlFile_MissingId_UsesFilename() throws IOException {
+        // Given: Fichier sans @id (ID extrait du nom de fichier)
+        // When
+        QueryDefinition query = parser.parseSqlFile("test-no-id.sql");
         
-        assertTrue(exception.getMessage().contains("L'ID est obligatoire"));
-        assertTrue(exception.getMessage().contains("test-no-id.sql"));
-        assertTrue(exception.getMessage().contains("-- @id:"));
+        // Then: L'ID est extrait du nom du fichier
+        assertNotNull(query);
+        assertEquals("test-no-id", query.getId()); // ID extrait du nom de fichier
     }
 
     @Test
-    void testParseSqlFile_EmptyId_ThrowsException() {
-        // Given: Fichier avec @id vide
-        // When/Then
-        IllegalArgumentException exception = assertThrows(
-            IllegalArgumentException.class,
-            () -> parser.parseSqlFile("test-empty-id.sql")
+    void testParseSqlFile_EmptyId_UsesFilename() throws IOException {
+        // Given: Fichier avec @id vide (ID extrait du nom de fichier)
+        // When
+        QueryDefinition query = parser.parseSqlFile("test-empty-id.sql");
+        
+        // Then: L'ID est extrait du nom du fichier car @id: est vide
+        assertNotNull(query);
+        assertEquals("test-empty-id", query.getId()); // ID extrait du nom de fichier
+    }
+    
+    @Test
+    void testParseSqlFile_IdFromFilename() throws IOException {
+        // Given: Fichier sans -- @id: explicite
+        // When: On parse avec un nom de fichier
+        QueryDefinition query = parser.parseSqlContent(
+            "-- @name: Test sans ID explicite\n\nSELECT * FROM table;",
+            "my-custom-query.sql"
         );
         
-        assertTrue(exception.getMessage().contains("L'ID est obligatoire"));
-        assertTrue(exception.getMessage().contains("-- @id:"));
+        // Then: L'ID est extrait du nom de fichier
+        assertEquals("my-custom-query", query.getId());
+        assertEquals("Test sans ID explicite", query.getName());
     }
 
     @Test

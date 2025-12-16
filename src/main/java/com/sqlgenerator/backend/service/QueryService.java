@@ -12,11 +12,13 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +35,8 @@ import org.slf4j.LoggerFactory;
 public class QueryService {
 
     private static final Logger logger = LoggerFactory.getLogger(QueryService.class);
+    
+    private static final String UPLOADS_DIR = "./sql_uploads/";
 
     private List<QueryDefinition> queries;
 
@@ -83,17 +87,80 @@ public class QueryService {
         }
         
         Files.createDirectories(Paths.get("./svn_repo_mock/"));
+        Files.createDirectories(Paths.get(UPLOADS_DIR));
     }
 
+    /**
+     * Recharge toutes les queries depuis les fichiers SQL (classpath + uploads).
+     * 
+     * Pourquoi cette méthode existe ?
+     * - Permet de recharger les queries sans redémarrer l'application
+     * - Utile après un upload de nouveau fichier SQL
+     * - Utile pour corriger un fichier mal formé
+     */
+    public void reloadQueries() throws IOException {
+        logger.info("Rechargement des queries...");
+        queries = new ArrayList<>();
+        
+        List<String> sqlFiles = scanSqlFiles();
+        logger.info("Rechargement : {} fichier(s) SQL trouvé(s)", sqlFiles.size());
+        
+        int successCount = 0;
+        int failureCount = 0;
+        
+        for (String filename : sqlFiles) {
+            try {
+                QueryDefinition query = loadQueryFromFile(filename);
+                
+                // Valider les placeholders vs paramètres définis
+                String sqlContent = loadSqlFromFile(query);
+                validatePlaceholders(query, sqlContent, filename);
+                
+                queries.add(query);
+                successCount++;
+                logger.debug("Query rechargée : {} ({})", query.getId(), query.getName());
+            } catch (Exception e) {
+                failureCount++;
+                logger.error("❌ Erreur lors du rechargement du fichier '{}' : {}", filename, e.getMessage(), e);
+            }
+        }
+        
+        logger.info("Rechargement terminé : {} query(s) chargée(s) avec succès, {} échec(s)", 
+                successCount, failureCount);
+    }
+
+    /**
+     * Scanne les fichiers SQL depuis deux sources :
+     * 1. Classpath (fichiers statiques dans src/main/resources/sql/)
+     * 2. Répertoire d'uploads (fichiers dynamiques dans ./sql_uploads/)
+     * 
+     * Les fichiers uploadés ont la priorité en cas de conflit de nom.
+     */
     private List<String> scanSqlFiles() throws IOException {
         List<String> filenames = new ArrayList<>();
-        ResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
-        Resource[] resources = resolver.getResources("classpath:sql/*.sql");
         
-        for (Resource resource : resources) {
+        // 1. Scanner le classpath (fichiers statiques)
+        ResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
+        Resource[] classpathResources = resolver.getResources("classpath:sql/*.sql");
+        for (Resource resource : classpathResources) {
             String filename = resource.getFilename();
             if (filename != null && filename.endsWith(".sql")) {
                 filenames.add(filename);
+            }
+        }
+        
+        // 2. Scanner le répertoire d'uploads (fichiers dynamiques)
+        Path uploadsDir = Paths.get(UPLOADS_DIR);
+        if (Files.exists(uploadsDir)) {
+            try (Stream<Path> paths = Files.walk(uploadsDir)) {
+                paths.filter(Files::isRegularFile)
+                     .filter(p -> p.toString().endsWith(".sql"))
+                     .forEach(p -> {
+                         String filename = p.getFileName().toString();
+                         // Priorité aux uploads : remplacer si déjà dans la liste
+                         filenames.remove(filename);
+                         filenames.add(filename);
+                     });
             }
         }
         
@@ -154,7 +221,7 @@ public class QueryService {
      * @param filename Le nom du fichier pour les messages d'erreur
      * @throws IllegalArgumentException Si des placeholders ne sont pas définis
      */
-    private void validatePlaceholders(QueryDefinition query, String sqlContent, String filename) {
+    public void validatePlaceholders(QueryDefinition query, String sqlContent, String filename) {
         // Extraire tous les placeholders du format {{nom_param}}
         Pattern placeholderPattern = Pattern.compile("\\{\\{([^}]+)\\}\\}");
         Matcher matcher = placeholderPattern.matcher(sqlContent);

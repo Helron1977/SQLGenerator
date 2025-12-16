@@ -7,6 +7,9 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -38,12 +41,46 @@ public class QueryMetadataParser {
      * - Syntaxe SQL native avec coloration dans l'IDE
      * - Facilite la maintenance : tout est au même endroit
      */
+    /**
+     * Parse un fichier SQL depuis le classpath ou le répertoire d'uploads.
+     * 
+     * Ordre de recherche :
+     * 1. Répertoire d'uploads (./sql_uploads/) - priorité
+     * 2. Classpath (src/main/resources/sql/)
+     */
     public QueryDefinition parseSqlFile(String filename) throws IOException {
         logger.debug("Parsing du fichier SQL : {}", filename);
         
-        ClassPathResource resource = new ClassPathResource("sql/" + filename);
-        String sqlContent = new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        String sqlContent = loadSqlContent(filename);
+        return parseSqlContent(sqlContent, filename);
+    }
+
+    /**
+     * Charge le contenu SQL depuis le répertoire d'uploads ou le classpath.
+     */
+    public String loadSqlContent(String filename) throws IOException {
+        // Essayer d'abord le répertoire d'uploads
+        Path uploadPath = Paths.get("./sql_uploads/", filename);
+        if (Files.exists(uploadPath)) {
+            logger.debug("Chargement depuis uploads : {}", filename);
+            return Files.readString(uploadPath, StandardCharsets.UTF_8);
+        }
         
+        // Sinon, utiliser le classpath
+        logger.debug("Chargement depuis classpath : {}", filename);
+        ClassPathResource resource = new ClassPathResource("sql/" + filename);
+        return new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Parse le contenu SQL et extrait les métadonnées.
+     * Méthode publique pour permettre la validation avant sauvegarde lors d'un upload.
+     * 
+     * L'ID peut être fourni de deux manières :
+     * 1. Via -- @id: dans les métadonnées (priorité)
+     * 2. Via le nom du fichier (sans extension .sql) si -- @id: n'est pas présent
+     */
+    public QueryDefinition parseSqlContent(String sqlContent, String filename) {
         Map<String, String> metadata = extractMetadata(sqlContent);
         List<ParameterDefinition> parameters = extractParameters(sqlContent);
         
@@ -52,19 +89,23 @@ public class QueryMetadataParser {
         
         QueryDefinition query = new QueryDefinition();
         
-        // Valider que l'ID est présent
+        // Extraire l'ID : depuis les métadonnées ou depuis le nom du fichier
         String id = metadata.get("id");
         if (id == null || id.trim().isEmpty()) {
-            throw new IllegalArgumentException(
-                String.format(
-                    "❌ Fichier '%s' : L'ID est obligatoire.\n" +
-                    "   Solution : Ajoutez une ligne au début du fichier :\n" +
-                    "   -- @id: votre-identifiant-unique\n" +
-                    "   \n" +
-                    "   L'ID doit être unique et ne contenir que des lettres, chiffres et tirets.",
-                    filename
-                )
-            );
+            // Si pas d'ID dans les métadonnées, l'extraire du nom du fichier
+            if (filename != null && filename.endsWith(".sql")) {
+                id = filename.substring(0, filename.length() - 4); // Retirer ".sql"
+                logger.debug("ID extrait du nom de fichier : {}", id);
+            } else {
+                throw new IllegalArgumentException(
+                    String.format(
+                        "❌ Fichier '%s' : Impossible de déterminer l'ID.\n" +
+                        "   Solution 1 : Ajoutez -- @id: votre-identifiant dans les métadonnées\n" +
+                        "   Solution 2 : Le nom du fichier doit se terminer par .sql (ex: votre-id.sql)",
+                        filename
+                    )
+                );
+            }
         }
         
         query.setId(id);

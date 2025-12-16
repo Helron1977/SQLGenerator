@@ -176,7 +176,6 @@ springdoc.swagger-ui.filter=true
 Chaque fichier SQL doit commencer par des métadonnées en commentaires :
 
 ```sql
--- @id: identifiant-unique              # Obligatoire
 -- @name: Nom descriptif                 # Affiché dans Swagger
 -- @description: Description détaillée   # Affiché dans Swagger
 -- @tags: tag1,tag2,tag3                 # Pour le filtrage
@@ -227,13 +226,13 @@ Voir `src/main/resources/sql/update-cedem-role.sql` pour un exemple complet avec
 ### L'endpoint n'apparaît pas dans Swagger
 
 - ✅ Vérifiez que le fichier SQL est dans `src/main/resources/sql/`
-- ✅ Vérifiez la présence de `-- @id:` dans le fichier
+- ✅ Vérifiez que le nom du fichier se termine par `.sql` (l'ID sera extrait automatiquement)
 - ✅ Redémarrez l'application
 - ✅ Consultez les logs pour les erreurs de parsing
 
 ### Erreur 404 "Query not found"
 
-- ✅ Vérifiez que l'ID dans l'URL correspond au `-- @id:` du fichier SQL
+- ✅ Vérifiez que l'ID dans l'URL correspond au `-- @id:` (si présent) ou au nom du fichier sans `.sql`
 - ✅ Vérifiez que l'application a bien démarré
 
 ### Erreur 415 "Unsupported Media Type"
