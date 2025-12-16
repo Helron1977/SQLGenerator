@@ -17,7 +17,7 @@ SQL Generator est un outil qui transforme vos fichiers SQL paramétrés en API R
   - **Unitaire** : 1 requête → 1 script SQL
   - **Masse** : 1 fichier CSV → N scripts SQL (1 par ligne)
 - **📊 Gestion des clauses IN** : Lotissement automatique (batches de 999 pour Oracle)
-- **💾 Scripts horodatés** : Sortie dans `./svn_repo_mock/` avec timestamp
+- **💾 Scripts horodatés** : Sortie dans `Cf fichier properties` avec timestamp
 - **🔍 Validation** : Vérification des placeholders au démarrage
 
 ---
@@ -35,7 +35,7 @@ SQL Generator est un outil qui transforme vos fichiers SQL paramétrés en API R
 mvn spring-boot:run
 ```
 
-L'application démarre sur **http://localhost:8080**
+L'application démarre sur **http://localhost:8080** < cf properties>
 
 ### 3️⃣ Accès Swagger
 
@@ -197,10 +197,6 @@ mvn test -Dtest=TemplateMetadataParserTest
 
 ## 📚 Documentation Complémentaire
 
-- **[GUIDE_AJOUT_REQUETE.md](GUIDE_AJOUT_REQUETE.md)** : Guide détaillé pour ajouter un nouveau template
-- **[FLOWCHART.md](FLOWCHART.md)** : Diagramme du flux de traitement
-- **[EXPORT_OPENAPI_SCHEMA.md](EXPORT_OPENAPI_SCHEMA.md)** : Exporter le schéma OpenAPI
-- **[COMMANDES_PORT_8080.md](COMMANDES_PORT_8080.md)** : Gérer les processus sur le port 8080
 
 ---
 
@@ -229,13 +225,13 @@ public static final String OUTPUT_SCRIPTS_PATH = "./mon_repertoire/";
 1. Créer une branche feature : `git checkout -b feature/ma-fonctionnalite`
 2. Commit : `git commit -m "feat: ajout de ma fonctionnalité"`
 3. Push : `git push origin feature/ma-fonctionnalite`
-4. Créer une Pull Request
+4. Créer une Merge Request
 
 ---
 
 ## 📄 Licence
 
-Ce projet est sous licence MIT.
+Ce projet est sous licence 4
 
 ---
 
@@ -245,13 +241,11 @@ Ce projet est sous licence MIT.
 
 ```bash
 # Vérifier si le port 8080 est déjà utilisé
-Get-NetTCPConnection -LocalPort 8080
+Get-NetTCPConnection -LocalPort <PORT du fichier propertie>
 
 # Tuer le processus
 Stop-Process -Id <PID> -Force
 ```
-
-Voir [COMMANDES_PORT_8080.md](COMMANDES_PORT_8080.md) pour plus de détails.
 
 ### Les templates ne sont pas chargés
 
@@ -263,4 +257,4 @@ Tous les `{{placeholders}}` dans le SQL doivent avoir une ligne `@param` ou `@pa
 
 ---
 
-**Développé avec ❤️ pour simplifier la génération de scripts SQL**
+**Développé avec amnégation pour simplifier la génération de scripts SQL**

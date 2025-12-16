@@ -67,5 +67,69 @@ public final class TemplateConstants {
      * Format utilisé car les dates sont souvent stockées en CHAR dans Oracle.
      */
     public static final String DATE_FORMAT = "DD/MM/YY";
+
+    // ========== Métadonnées SQL ==========
+
+    /**
+     * Préfixe des lignes de métadonnées dans les fichiers SQL.
+     * Format : "-- @"
+     */
+    public static final String METADATA_PREFIX = "-- @";
+
+    /**
+     * Longueur du préfixe des métadonnées.
+     */
+    public static final int METADATA_PREFIX_LENGTH = 4;
+
+    /**
+     * Préfixe des lignes de paramètres normaux dans les fichiers SQL.
+     * Format : "-- @param:"
+     */
+    public static final String PARAM_PREFIX = "-- @param:";
+
+    /**
+     * Longueur du préfixe des paramètres normaux.
+     */
+    public static final int PARAM_PREFIX_LENGTH = 10;
+
+    /**
+     * Préfixe des lignes de paramètres fichier dans les fichiers SQL.
+     * Format : "-- @param-file:"
+     */
+    public static final String PARAM_FILE_PREFIX = "-- @param-file:";
+
+    /**
+     * Longueur du préfixe des paramètres fichier.
+     */
+    public static final int PARAM_FILE_PREFIX_LENGTH = 15;
+
+    /**
+     * Nombre minimum de parties requises pour un paramètre (nom|type|label).
+     */
+    public static final int MINIMUM_PARAMETER_PARTS = 3;
+
+    // ========== Patterns et Expressions Régulières ==========
+
+    /**
+     * Pattern regex pour extraire les placeholders du format {{nom_param}}.
+     */
+    public static final String PLACEHOLDER_PATTERN = "\\{\\{([^}]+)\\}\\}";
+
+    /**
+     * Pattern regex pour valider le format de date DD/MM/YY.
+     */
+    public static final String DATE_PATTERN_DDMMYY = "\\d{2}/\\d{2}/\\d{2}";
+
+    /**
+     * Pattern regex pour valider le format de date YYYY-MM-DD.
+     */
+    public static final String DATE_PATTERN_YYYYMMDD = "\\d{4}-\\d{2}-\\d{2}";
+
+    // ========== Noms de Paramètres Spéciaux ==========
+
+    /**
+     * Nom du paramètre pour le fichier CSV en mode masse.
+     */
+    public static final String MASSE_FILE_PARAM = "masseFile";
 }
 

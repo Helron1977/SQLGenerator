@@ -13,10 +13,14 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,37 +67,89 @@ public class TemplateService {
         List<String> sqlFiles = scanSqlFiles();
         logger.info("Démarrage : {} fichier(s) SQL trouvé(s)", sqlFiles.size());
         
-        for (String filename : sqlFiles) {
-            try {
-                TemplateDefinition template = loadTemplateFromFile(filename);
-                
-                // Valider les placeholders vs paramètres définis
-                String sqlContent = loadSqlFromFile(template);
-                validatePlaceholders(template, sqlContent, filename);
-                
-                templates.add(template);
-                logger.debug("Template chargé : {} ({})", template.getId(), template.getName());
-            } catch (Exception e) {
-                // Log mais ne bloque pas le démarrage : un fichier mal formé ne doit pas empêcher l'app
-                logger.error("❌ Erreur lors du parsing du fichier '{}' : {}", filename, e.getMessage(), e);
-            }
-        }
+        loadAllTemplates(sqlFiles);
         
+        logInitializationSummary();
+        createOutputDirectoryIfNeeded();
+    }
+
+    /**
+     * Charge tous les templates depuis les fichiers SQL trouvés.
+     * 
+     * @param sqlFiles Liste des noms de fichiers SQL à charger
+     */
+    private void loadAllTemplates(List<String> sqlFiles) {
+        for (String filename : sqlFiles) {
+            loadTemplateSafely(filename);
+        }
+    }
+
+    /**
+     * Charge un template de manière sécurisée (ne bloque pas le démarrage en cas d'erreur).
+     * 
+     * @param filename Nom du fichier SQL à charger
+     */
+    private void loadTemplateSafely(String filename) {
+        try {
+            TemplateDefinition template = loadTemplateFromFile(filename);
+            String sqlContent = loadSqlFromFile(template);
+            validatePlaceholders(template, sqlContent, filename);
+            
+            templates.add(template);
+            logger.debug("Template chargé : {} ({})", template.getId(), template.getName());
+        } catch (Exception e) {
+            logTemplateLoadError(filename, e);
+        }
+    }
+
+    /**
+     * Log une erreur lors du chargement d'un template.
+     * 
+     * @param filename Nom du fichier qui a causé l'erreur
+     * @param e Exception levée
+     */
+    private void logTemplateLoadError(String filename, Exception e) {
+        logger.error("❌ Erreur lors du parsing du fichier '{}' : {}", filename, e.getMessage(), e);
+    }
+
+    /**
+     * Log le résumé de l'initialisation.
+     */
+    private void logInitializationSummary() {
         logger.info("Initialisation terminée : {} template(s) chargé(s) avec succès", templates.size());
         
         if (templates.isEmpty()) {
             logger.warn("⚠️  Aucun template chargé. Vérifiez que les fichiers SQL sont dans src/main/resources/templates/");
         }
-        
-        // Créer le répertoire de sortie au démarrage
+    }
+
+    /**
+     * Crée le répertoire de sortie s'il n'existe pas.
+     */
+    private void createOutputDirectoryIfNeeded() {
         try {
             Files.createDirectories(Paths.get(appProperties.getOutputScriptsPath()));
             logger.debug("Répertoire de sortie créé/vérifié: {}", appProperties.getOutputScriptsPath());
         } catch (Exception e) {
-            logger.warn("Impossible de créer le répertoire de sortie: {}", e.getMessage());
+            logOutputDirectoryCreationError(e);
         }
     }
 
+    /**
+     * Log une erreur lors de la création du répertoire de sortie.
+     * 
+     * @param e Exception levée
+     */
+    private void logOutputDirectoryCreationError(Exception e) {
+        logger.warn("Impossible de créer le répertoire de sortie: {}", e.getMessage());
+    }
+
+    /**
+     * Scanne le répertoire des templates pour trouver tous les fichiers SQL.
+     * 
+     * @return Liste des noms de fichiers SQL trouvés
+     * @throws IOException Si le scan échoue
+     */
     private List<String> scanSqlFiles() throws IOException {
         List<String> filenames = new ArrayList<>();
         ResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
@@ -109,6 +165,13 @@ public class TemplateService {
         return filenames;
     }
 
+    /**
+     * Charge un template depuis un fichier SQL en parsant ses métadonnées.
+     * 
+     * @param filename Nom du fichier SQL à charger
+     * @return Template parsé avec ses métadonnées
+     * @throws IOException Si le fichier ne peut pas être lu ou parsé
+     */
     private TemplateDefinition loadTemplateFromFile(String filename) throws IOException {
         return metadataParser.parseSqlFile(filename);
     }
@@ -132,6 +195,13 @@ public class TemplateService {
         return sqlFileBuilder.buildAndWriteFile(template, executionType, params, sql);
     }
 
+    /**
+     * Valide et récupère un template par son ID.
+     * 
+     * @param templateId Identifiant du template
+     * @return Template validé
+     * @throws IllegalArgumentException Si le template n'existe pas ou n'a pas de sqlFilename
+     */
     private TemplateDefinition validateAndGetTemplate(String templateId) {
         TemplateDefinition template = getTemplateById(templateId);
         if (template == null) {
@@ -143,6 +213,13 @@ public class TemplateService {
         return template;
     }
 
+    /**
+     * Charge le contenu SQL pur (sans métadonnées) depuis le fichier du template.
+     * 
+     * @param template Template dont on veut charger le SQL
+     * @return Contenu SQL sans métadonnées
+     * @throws IOException Si le fichier ne peut pas être lu
+     */
     private String loadSqlFromFile(TemplateDefinition template) throws IOException {
         ClassPathResource sqlResource = new ClassPathResource(TemplateConstants.TEMPLATES_DIR + template.getSqlFilename());
         String sqlContent = new String(sqlResource.getInputStream().readAllBytes(), 
@@ -164,8 +241,25 @@ public class TemplateService {
      * @throws IllegalArgumentException Si des placeholders ne sont pas définis
      */
     private void validatePlaceholders(TemplateDefinition template, String sqlContent, String filename) {
-        // Extraire tous les placeholders du format {{nom_param}}
-        Pattern placeholderPattern = Pattern.compile("\\{\\{([^}]+)\\}\\}");
+        Set<String> placeholders = extractPlaceholders(sqlContent);
+        
+        if (placeholders.isEmpty()) {
+            return;
+        }
+        
+        Set<String> definedParams = extractDefinedParameters(template);
+        validateAllPlaceholdersDefined(placeholders, definedParams, filename);
+        logUnusedParameters(placeholders, definedParams, filename);
+    }
+
+    /**
+     * Extrait tous les placeholders du format {{nom_param}} depuis le SQL.
+     * 
+     * @param sqlContent Contenu SQL à analyser
+     * @return Set des noms de placeholders trouvés
+     */
+    private Set<String> extractPlaceholders(String sqlContent) {
+        Pattern placeholderPattern = Pattern.compile(TemplateConstants.PLACEHOLDER_PATTERN);
         Matcher matcher = placeholderPattern.matcher(sqlContent);
         Set<String> placeholders = new HashSet<>();
         
@@ -173,43 +267,111 @@ public class TemplateService {
             placeholders.add(matcher.group(1).trim());
         }
         
-        // Si aucun placeholder, pas de validation nécessaire
-        if (placeholders.isEmpty()) {
-            return;
+        return placeholders;
+    }
+
+    /**
+     * Extrait les noms des paramètres définis dans le template.
+     * 
+     * @param template Template à analyser
+     * @return Set des noms de paramètres définis
+     */
+    private Set<String> extractDefinedParameters(TemplateDefinition template) {
+        if (template.getParameters() == null) {
+            return new HashSet<>();
         }
         
-        // Récupérer les noms des paramètres définis
-        Set<String> definedParams = new HashSet<>();
-        if (template.getParameters() != null) {
-            definedParams = template.getParameters().stream()
-                    .map(ParameterDefinition::getName)
-                    .filter(Objects::nonNull)
-                    .collect(Collectors.toSet());
-        }
-        
-        // Trouver les placeholders non définis
-        Set<String> missing = new HashSet<>(placeholders);
-        missing.removeAll(definedParams);
+        return template.getParameters().stream()
+                .map(ParameterDefinition::getName)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+    }
+
+    /**
+     * Valide que tous les placeholders ont un paramètre défini.
+     * 
+     * @param placeholders Placeholders trouvés dans le SQL
+     * @param definedParams Paramètres définis dans le template
+     * @param filename Nom du fichier pour les messages d'erreur
+     * @throws IllegalArgumentException Si des placeholders ne sont pas définis
+     */
+    private void validateAllPlaceholdersDefined(Set<String> placeholders, Set<String> definedParams, String filename) {
+        Set<String> missing = findMissingPlaceholders(placeholders, definedParams);
         
         if (!missing.isEmpty()) {
-            String missingList = String.join(", ", missing);
-            throw new IllegalArgumentException(
-                String.format(
-                    "❌ Fichier '%s' : Placeholders non définis dans les paramètres : %s\n" +
-                    "   Solution : Ajoutez les paramètres manquants avec -- @param: ou -- @param-file:\n" +
-                    "   Exemple : -- @param: %s|text|Description|true",
-                    filename, missingList, missing.iterator().next()
-                )
-            );
+            throw createMissingPlaceholdersException(missing, filename);
         }
+    }
+
+    /**
+     * Trouve les placeholders qui n'ont pas de paramètre défini.
+     * 
+     * @param placeholders Placeholders trouvés dans le SQL
+     * @param definedParams Paramètres définis dans le template
+     * @return Set des placeholders manquants
+     */
+    private Set<String> findMissingPlaceholders(Set<String> placeholders, Set<String> definedParams) {
+        Set<String> missing = new HashSet<>(placeholders);
+        missing.removeAll(definedParams);
+        return missing;
+    }
+
+    /**
+     * Crée une exception pour les placeholders manquants.
+     * 
+     * @param missing Placeholders manquants
+     * @param filename Nom du fichier
+     * @return IllegalArgumentException avec message détaillé
+     */
+    private IllegalArgumentException createMissingPlaceholdersException(Set<String> missing, String filename) {
+        String missingList = String.join(", ", missing);
+        return new IllegalArgumentException(
+            String.format(
+                "❌ Fichier '%s' : Placeholders non définis dans les paramètres : %s\n" +
+                "   Solution : Ajoutez les paramètres manquants avec -- @param: ou -- @param-file:\n" +
+                "   Exemple : -- @param: %s|text|Description|true",
+                filename, missingList, missing.iterator().next()
+            )
+        );
+    }
+
+    /**
+     * Log les paramètres définis mais non utilisés dans le SQL.
+     * 
+     * @param placeholders Placeholders trouvés dans le SQL
+     * @param definedParams Paramètres définis dans le template
+     * @param filename Nom du fichier pour les logs
+     */
+    private void logUnusedParameters(Set<String> placeholders, Set<String> definedParams, String filename) {
+        Set<String> unused = findUnusedParameters(placeholders, definedParams);
         
-        // Vérifier aussi les paramètres définis mais non utilisés (warning seulement)
+        if (!unused.isEmpty()) {
+            logUnusedParametersWarning(unused, filename);
+        }
+    }
+
+    /**
+     * Trouve les paramètres définis mais non utilisés dans le SQL.
+     * 
+     * @param placeholders Placeholders trouvés dans le SQL
+     * @param definedParams Paramètres définis dans le template
+     * @return Set des paramètres non utilisés
+     */
+    private Set<String> findUnusedParameters(Set<String> placeholders, Set<String> definedParams) {
         Set<String> unused = new HashSet<>(definedParams);
         unused.removeAll(placeholders);
-        if (!unused.isEmpty()) {
-            logger.warn("Fichier '{}' : Paramètres définis mais non utilisés dans le SQL : {}", 
-                    filename, String.join(", ", unused));
-        }
+        return unused;
+    }
+
+    /**
+     * Log un warning pour les paramètres non utilisés.
+     * 
+     * @param unused Paramètres non utilisés
+     * @param filename Nom du fichier
+     */
+    private void logUnusedParametersWarning(Set<String> unused, String filename) {
+        logger.warn("Fichier '{}' : Paramètres définis mais non utilisés dans le SQL : {}", 
+                filename, String.join(", ", unused));
     }
 
     /**
@@ -222,7 +384,7 @@ public class TemplateService {
      */
     private String processSqlWithParams(TemplateDefinition template, String baseSql, Map<String, Object> params, String executionType) {
         // Mode masse : générer n requêtes (une par ligne du fichier CSV)
-        if (TemplateConstants.EXECUTION_TYPE_MASSE.equals(executionType) && params.containsKey("masseFile")) {
+        if (TemplateConstants.EXECUTION_TYPE_MASSE.equals(executionType) && params.containsKey(TemplateConstants.MASSE_FILE_PARAM)) {
             return generateMasseSql(template, baseSql, params);
         }
         
@@ -249,15 +411,53 @@ public class TemplateService {
                         && ((List<?>) params.get(p.getName())).size() > TemplateConstants.ORACLE_IN_MAX_SIZE);
     }
 
+    /**
+     * Remplace tous les placeholders {{param}} dans le SQL par leurs valeurs.
+     * 
+     * @param template Template contenant les définitions de paramètres
+     * @param sql SQL avec placeholders
+     * @param params Map des valeurs des paramètres
+     * @return SQL avec placeholders remplacés
+     */
     private String replacePlaceholders(TemplateDefinition template, String sql, Map<String, Object> params) {
         String result = sql;
         for (ParameterDefinition paramDef : template.getParameters()) {
             String replacement = buildParameterReplacement(paramDef, params.get(paramDef.getName()));
-            result = result.replace("{{" + paramDef.getName() + "}}", replacement);
+            result = replacePlaceholder(result, paramDef.getName(), replacement);
         }
         return result;
     }
 
+    /**
+     * Remplace un placeholder dans le SQL par sa valeur.
+     * 
+     * @param sql SQL avec placeholder
+     * @param paramName Nom du paramètre
+     * @param replacement Valeur de remplacement
+     * @return SQL avec placeholder remplacé
+     */
+    private String replacePlaceholder(String sql, String paramName, String replacement) {
+        String placeholder = buildPlaceholder(paramName);
+        return sql.replace(placeholder, replacement);
+    }
+
+    /**
+     * Construit un placeholder au format {{nom_param}}.
+     * 
+     * @param paramName Nom du paramètre
+     * @return Placeholder formaté
+     */
+    private String buildPlaceholder(String paramName) {
+        return "{{" + paramName + "}}";
+    }
+
+    /**
+     * Construit le remplacement d'un paramètre selon son type et sa valeur.
+     * 
+     * @param paramDef Définition du paramètre (type, fichier, etc.)
+     * @param value Valeur à utiliser pour le remplacement
+     * @return Chaîne de remplacement SQL (peut être "NULL", une valeur formatée, etc.)
+     */
     private String buildParameterReplacement(ParameterDefinition paramDef, Object value) {
         if (value == null || isNullValue(value)) {
             return "NULL";
@@ -289,6 +489,12 @@ public class TemplateService {
         return str.isEmpty() || "null".equalsIgnoreCase(str) || "NULL".equalsIgnoreCase(str);
     }
 
+    /**
+     * Construit le remplacement pour un paramètre de type fichier (clause IN).
+     * 
+     * @param value Valeur du paramètre (peut être une List<String> ou String)
+     * @return Clause IN formatée ou "NULL" si aucune valeur valide
+     */
     private String buildFileParameterReplacement(Object value) {
         if (value == null || isNullValue(value)) {
             return "NULL";
@@ -319,6 +525,13 @@ public class TemplateService {
         return "NULL";
     }
 
+    /**
+     * Construit le remplacement pour un paramètre simple (non-fichier).
+     * 
+     * @param type Type du paramètre (text, number, date)
+     * @param value Valeur à formater
+     * @return Valeur formatée pour SQL (avec guillemets si nécessaire, format date, etc.)
+     */
     private String buildSimpleParameterReplacement(String type, Object value) {
         if (value == null || isNullValue(value)) {
             return "NULL";
@@ -355,24 +568,74 @@ public class TemplateService {
         
         String trimmed = dateValue.trim();
         
-        // Si déjà au format DD/MM/YY, retourner tel quel
-        if (trimmed.matches("\\d{2}/\\d{2}/\\d{2}")) {
-            return "'" + trimmed + "'";
+        if (isDateFormatDDMMYY(trimmed)) {
+            return formatDateAsDDMMYY(trimmed);
         }
         
-        // Si format YYYY-MM-DD, convertir en DD/MM/YY
-        if (trimmed.matches("\\d{4}-\\d{2}-\\d{2}")) {
-            String[] parts = trimmed.split("-");
-            String year = parts[0];
-            String month = parts[1];
-            String day = parts[2];
-            // Prendre les 2 derniers chiffres de l'année
-            String shortYear = year.length() >= 2 ? year.substring(year.length() - 2) : year;
-            return "'" + day + "/" + month + "/" + shortYear + "'";
+        if (isDateFormatYYYYMMDD(trimmed)) {
+            return convertToDDMMYY(trimmed);
         }
         
-        // Sinon, retourner tel quel (responsabilité du dev SQL)
-        return "'" + escapeSqlString(trimmed) + "'";
+        return formatDateAsIs(trimmed);
+    }
+
+    /**
+     * Vérifie si la date est déjà au format DD/MM/YY.
+     * 
+     * @param dateValue Date à vérifier
+     * @return true si au format DD/MM/YY, false sinon
+     */
+    private boolean isDateFormatDDMMYY(String dateValue) {
+        return dateValue.matches(TemplateConstants.DATE_PATTERN_DDMMYY);
+    }
+
+    /**
+     * Formate une date déjà au format DD/MM/YY.
+     * 
+     * @param dateValue Date au format DD/MM/YY
+     * @return Date formatée pour SQL avec guillemets
+     */
+    private String formatDateAsDDMMYY(String dateValue) {
+        return "'" + dateValue + "'";
+    }
+
+    /**
+     * Vérifie si la date est au format YYYY-MM-DD.
+     * 
+     * @param dateValue Date à vérifier
+     * @return true si au format YYYY-MM-DD, false sinon
+     */
+    private boolean isDateFormatYYYYMMDD(String dateValue) {
+        return dateValue.matches(TemplateConstants.DATE_PATTERN_YYYYMMDD);
+    }
+
+    /**
+     * Convertit une date YYYY-MM-DD en DD/MM/YY en utilisant les API Java standard.
+     * 
+     * @param dateValue Date au format YYYY-MM-DD
+     * @return Date convertie au format DD/MM/YY avec guillemets
+     */
+    private String convertToDDMMYY(String dateValue) {
+        try {
+            LocalDate date = LocalDate.parse(dateValue, DateTimeFormatter.ISO_LOCAL_DATE);
+            DateTimeFormatter outputFormatter = DateTimeFormatter.ofPattern("dd/MM/yy");
+            String formatted = date.format(outputFormatter);
+            return "'" + formatted + "'";
+        } catch (DateTimeParseException e) {
+            // Si le parsing échoue, retourner tel quel avec guillemets
+            logger.debug("Impossible de parser la date '{}' : {}", dateValue, e.getMessage());
+            return "'" + escapeSqlString(dateValue) + "'";
+        }
+    }
+
+    /**
+     * Formate une date telle quelle (responsabilité du dev SQL).
+     * 
+     * @param dateValue Date à formater
+     * @return Date formatée avec guillemets et échappement SQL
+     */
+    private String formatDateAsIs(String dateValue) {
+        return "'" + escapeSqlString(dateValue) + "'";
     }
 
     /**
@@ -383,6 +646,12 @@ public class TemplateService {
     }
 
 
+    /**
+     * Supprime les commentaires de métadonnées (-- @id:, -- @param:, etc.) du contenu SQL.
+     * 
+     * @param sqlContent Contenu SQL brut avec métadonnées
+     * @return SQL pur sans métadonnées
+     */
     private String removeMetadataComments(String sqlContent) {
         StringBuilder sql = new StringBuilder();
         String[] lines = sqlContent.split("\n");
@@ -409,6 +678,14 @@ public class TemplateService {
     /**
      * Génère du SQL avec lotissement si nécessaire (> 999 valeurs dans un IN).
      */
+    /**
+     * Génère du SQL avec lotissement pour gérer les clauses IN > 999 valeurs.
+     * 
+     * @param template Template contenant les paramètres
+     * @param baseSql SQL de base avec placeholders
+     * @param params Map des valeurs des paramètres
+     * @return SQL avec lots séparés pour la clause IN
+     */
     private String generateBatchedSql(TemplateDefinition template, String baseSql, Map<String, Object> params) {
         ParameterDefinition fileParam = findFileParameterForBatching(template, params);
         if (fileParam == null) {
@@ -425,6 +702,13 @@ public class TemplateService {
         return generateBatches(fileParam, values, sqlTemplate);
     }
 
+    /**
+     * Trouve le premier paramètre de type fichier dans les paramètres fournis.
+     * 
+     * @param template Template contenant les définitions de paramètres
+     * @param params Map des valeurs des paramètres
+     * @return Paramètre de type fichier trouvé, ou null si aucun
+     */
     private ParameterDefinition findFileParameterForBatching(TemplateDefinition template, Map<String, Object> params) {
         return template.getParameters().stream()
                 .filter(p -> p.isFile() && params.get(p.getName()) instanceof List)
@@ -432,13 +716,22 @@ public class TemplateService {
                 .orElse(null);
     }
 
+    /**
+     * Remplace tous les placeholders sauf celui du paramètre fichier (qui sera traité séparément).
+     * 
+     * @param template Template contenant les définitions de paramètres
+     * @param sql SQL avec placeholders
+     * @param params Map des valeurs des paramètres
+     * @param fileParam Paramètre fichier à exclure du remplacement
+     * @return SQL avec placeholders non-fichier remplacés
+     */
     private String replaceNonFileParameters(TemplateDefinition template, String sql, 
                                            Map<String, Object> params, ParameterDefinition fileParam) {
         String result = sql;
         for (ParameterDefinition paramDef : template.getParameters()) {
             if (!paramDef.isFile() && !paramDef.getName().equals(fileParam.getName())) {
                 String replacement = buildSimpleParameterReplacement(paramDef.getType(), params.get(paramDef.getName()));
-                result = result.replace("{{" + paramDef.getName() + "}}", replacement);
+                result = replacePlaceholder(result, paramDef.getName(), replacement);
             }
         }
         return result;
@@ -465,12 +758,30 @@ public class TemplateService {
         return result.toString();
     }
 
+    /**
+     * Extrait un lot de valeurs depuis la liste complète.
+     * 
+     * @param values Liste complète des valeurs
+     * @param batchIndex Index du lot (0-based)
+     * @param batchSize Taille d'un lot
+     * @return Liste des valeurs du lot
+     */
     private List<String> extractBatch(List<String> values, int batchIndex, int batchSize) {
         int start = batchIndex * batchSize;
         int end = Math.min(start + batchSize, values.size());
         return values.subList(start, end);
     }
 
+    /**
+     * Ajoute un lot de SQL au résultat avec commentaire et clause IN formatée.
+     * 
+     * @param result StringBuilder où ajouter le SQL du lot
+     * @param batchIndex Index du lot (0-based)
+     * @param totalBatches Nombre total de lots
+     * @param batch Valeurs du lot à insérer dans la clause IN
+     * @param fileParam Paramètre fichier utilisé pour la clause IN
+     * @param sqlTemplate Template SQL avec placeholder pour le paramètre fichier
+     */
     private void appendBatch(StringBuilder result, int batchIndex, int totalBatches, 
                              List<String> batch, ParameterDefinition fileParam, String sqlTemplate) {
         if (batchIndex > 0) {
@@ -481,94 +792,218 @@ public class TemplateService {
                .append(" (").append(batch.size()).append(" valeurs)\n");
 
         String inClause = formatSingleInClause(batch);
-        String sqlForBatch = sqlTemplate.replace("{{" + fileParam.getName() + "}}", inClause);
+        String sqlForBatch = replacePlaceholder(sqlTemplate, fileParam.getName(), inClause);
         result.append(sqlForBatch);
     }
 
     /**
-     * Formate une liste de valeurs pour une clause IN simple (<= 999 valeurs).
+     * Formate une liste de valeurs en clause IN SQL (ex: 'val1', 'val2', 'val3').
+     * 
+     * @param values Liste des valeurs à formater
+     * @return Clause IN formatée, ou "NULL" si la liste est vide/null
      */
     private String formatSingleInClause(List<String> values) {
         if (values == null || values.isEmpty()) {
             return "NULL";
         }
         
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < values.size(); i++) {
-            if (i > 0) {
-                sb.append(", ");
-            }
-            String value = values.get(i).trim();
-            // Filtrer les valeurs NULL/vides
-            if (value.isEmpty() || isNullValue(value)) {
-                sb.append("NULL");
-            } else {
-                // Entourer de guillemets simples pour les valeurs texte
-                sb.append("'").append(escapeSqlString(value)).append("'");
-            }
+        return values.stream()
+                .map(this::formatInClauseValue)
+                .collect(Collectors.joining(", "));
+    }
+
+    /**
+     * Formate une valeur individuelle pour une clause IN SQL.
+     * 
+     * @param value Valeur à formater (sera trimée)
+     * @return Valeur formatée : "NULL" si vide/null, sinon 'valeur' avec échappement
+     */
+    private String formatInClauseValue(String value) {
+        String trimmed = value.trim();
+        
+        if (trimmed.isEmpty() || isNullValue(trimmed)) {
+            return "NULL";
         }
-        return sb.toString();
+        
+        return formatInClauseValueAsString(trimmed);
+    }
+
+    /**
+     * Formate une valeur non-nulle pour une clause IN SQL avec guillemets.
+     * 
+     * @param value Valeur à formater (déjà trimée et non-nulle)
+     * @return Valeur formatée avec guillemets et échappement SQL
+     */
+    private String formatInClauseValueAsString(String value) {
+        return "'" + escapeSqlString(value) + "'";
     }
 
 
     /**
      * Génère du SQL en mode masse : n lignes dans le fichier CSV = n requêtes SQL dans un seul fichier.
      * Format du fichier : CSV avec une ligne par requête, valeurs séparées par virgule dans l'ordre des paramètres.
+     * 
+     * @param template Template contenant les définitions de paramètres
+     * @param baseSql SQL de base avec placeholders
+     * @param params Map contenant les paramètres, dont le fichier CSV en mode masse
+     * @return SQL généré avec toutes les requêtes (une par ligne CSV)
      */
     private String generateMasseSql(TemplateDefinition template, String baseSql, Map<String, Object> params) {
-        // Récupérer les lignes du fichier CSV uploadé
-        @SuppressWarnings("unchecked")
-        List<String> fileLines = (List<String>) params.get("masseFile");
+        List<String> fileLines = extractCsvLines(params);
         if (fileLines == null || fileLines.isEmpty()) {
             return baseSql;
         }
 
-        // Extraire l'ordre des paramètres (tous les paramètres non-fichier dans l'ordre)
-        List<ParameterDefinition> orderedParams = template.getParameters().stream()
-                .filter(p -> !p.isFile())
-                .collect(java.util.stream.Collectors.toList());
+        List<ParameterDefinition> orderedParams = extractOrderedNonFileParameters(template);
+        
+        return generateSqlForAllLines(template, baseSql, fileLines, orderedParams, params);
+    }
 
-        // Générer une requête par ligne
+    /**
+     * Extrait les lignes du fichier CSV depuis les paramètres.
+     * 
+     * @param params Map des paramètres
+     * @return Liste des lignes CSV, ou null si absent
+     */
+    @SuppressWarnings("unchecked")
+    private List<String> extractCsvLines(Map<String, Object> params) {
+        return (List<String>) params.get(TemplateConstants.MASSE_FILE_PARAM);
+    }
+
+    /**
+     * Extrait la liste ordonnée des paramètres non-fichier du template.
+     * 
+     * @param template Template contenant les paramètres
+     * @return Liste ordonnée des paramètres non-fichier
+     */
+    private List<ParameterDefinition> extractOrderedNonFileParameters(TemplateDefinition template) {
+        return template.getParameters().stream()
+                .filter(p -> !p.isFile())
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Génère le SQL pour toutes les lignes CSV.
+     * 
+     * @param template Template contenant les définitions de paramètres
+     * @param baseSql SQL de base avec placeholders
+     * @param fileLines Lignes du fichier CSV
+     * @param orderedParams Paramètres ordonnés (non-fichier)
+     * @param globalParams Paramètres globaux (ticket, etc.)
+     * @return SQL généré avec toutes les requêtes
+     */
+    private String generateSqlForAllLines(TemplateDefinition template, String baseSql, 
+                                          List<String> fileLines, List<ParameterDefinition> orderedParams,
+                                          Map<String, Object> globalParams) {
+        MassGenerationContext context = new MassGenerationContext(template, baseSql, orderedParams, globalParams);
         StringBuilder result = new StringBuilder();
+        
         for (int i = 0; i < fileLines.size(); i++) {
-            String line = fileLines.get(i);
-            Map<String, Object> lineParams = parseCsvLine(line, orderedParams);
-            
             if (i > 0) {
                 result.append("\n\n");
             }
             
-            result.append("-- Requête ").append(i + 1).append("/").append(fileLines.size()).append("\n");
-            
-            // Remplacer les placeholders avec les valeurs de la ligne
-            String sqlForLine = replacePlaceholdersForLine(template, baseSql, lineParams, params);
+            String sqlForLine = generateSqlForSingleLine(context, fileLines.get(i), i + 1, fileLines.size());
             result.append(sqlForLine);
         }
-
+        
         return result.toString();
+    }
+
+    /**
+     * Génère le SQL pour une seule ligne CSV.
+     * 
+     * @param context Contexte de génération (template, SQL, paramètres)
+     * @param csvLine Ligne CSV à traiter
+     * @param lineNumber Numéro de la ligne (1-based)
+     * @param totalLines Nombre total de lignes
+     * @return SQL généré pour cette ligne avec header de commentaire
+     */
+    private String generateSqlForSingleLine(MassGenerationContext context, String csvLine,
+                                           int lineNumber, int totalLines) {
+        Map<String, Object> lineParams = parseCsvLine(csvLine, context.orderedParams());
+        String sqlForLine = replacePlaceholdersForLine(context.template(), context.baseSql(), 
+                                                       lineParams, context.globalParams());
+        
+        return formatQueryHeader(lineNumber, totalLines) + sqlForLine;
+    }
+
+    /**
+     * Contexte de génération pour le mode masse.
+     * Regroupe les paramètres nécessaires à la génération SQL.
+     */
+    private record MassGenerationContext(
+        TemplateDefinition template,
+        String baseSql,
+        List<ParameterDefinition> orderedParams,
+        Map<String, Object> globalParams
+    ) {}
+
+    /**
+     * Formate le header de commentaire pour une requête (ex: "-- Requête 1/5\n").
+     * 
+     * @param lineNumber Numéro de la ligne (1-based)
+     * @param totalLines Nombre total de lignes
+     * @return Header formaté avec commentaire SQL
+     */
+    private String formatQueryHeader(int lineNumber, int totalLines) {
+        return "-- Requête " + lineNumber + "/" + totalLines + "\n";
     }
 
 
     /**
      * Parse une ligne CSV et crée un Map avec les valeurs dans l'ordre des paramètres.
-     * Gère les valeurs NULL/vides.
+     * 
+     * @param line Ligne CSV à parser
+     * @param orderedParams Liste ordonnée des paramètres (non-fichier)
+     * @return Map associant chaque paramètre à sa valeur (null si vide)
      */
     private Map<String, Object> parseCsvLine(String line, List<ParameterDefinition> orderedParams) {
-        Map<String, Object> lineParams = new HashMap<>();
-        String[] values = line.split(",");
-        
-        for (int i = 0; i < Math.min(values.length, orderedParams.size()); i++) {
-            ParameterDefinition param = orderedParams.get(i);
-            String value = values[i].trim();
-            // Stocker même si vide (sera géré comme NULL dans buildSimpleParameterReplacement)
-            lineParams.put(param.getName(), value.isEmpty() ? null : value);
+        if (line == null || orderedParams == null || orderedParams.isEmpty()) {
+            return new HashMap<>();
         }
         
-        return lineParams;
+        String[] values = line.split(",");
+        int maxIndex = Math.min(values.length, orderedParams.size());
+        
+        Map<String, Object> result = new HashMap<>();
+        for (int i = 0; i < maxIndex; i++) {
+            String paramName = orderedParams.get(i).getName();
+            Object value = extractCsvValue(values[i]);
+            result.put(paramName, value);
+        }
+        return result;
+    }
+
+    /**
+     * Extrait et nettoie une valeur CSV (trim et conversion null si vide).
+     * 
+     * @param rawValue Valeur brute du CSV
+     * @return Valeur trimée, ou null si vide
+     */
+    private Object extractCsvValue(String rawValue) {
+        if (rawValue == null) {
+            return null;
+        }
+        String trimmed = rawValue.trim();
+        // Retourner null pour les valeurs vides (sera géré comme NULL dans buildSimpleParameterReplacement)
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     /**
      * Remplace les placeholders pour une ligne spécifique (mode masse).
+     */
+    /**
+     * Remplace les placeholders pour une ligne spécifique (mode masse).
+     * 
+     * Les valeurs sont d'abord cherchées dans lineParams (valeurs de la ligne CSV),
+     * puis dans globalParams (paramètres globaux comme "ticket").
+     * 
+     * @param template Template contenant les définitions de paramètres
+     * @param sql SQL avec placeholders
+     * @param lineParams Paramètres spécifiques à la ligne CSV
+     * @param globalParams Paramètres globaux (ticket, etc.)
+     * @return SQL avec placeholders remplacés pour cette ligne
      */
     private String replacePlaceholdersForLine(TemplateDefinition template, String sql, 
                                               Map<String, Object> lineParams, Map<String, Object> globalParams) {
@@ -585,7 +1020,7 @@ public class TemplateService {
                 
                 // Gérer NULL/absence de valeur
                 String replacement = buildSimpleParameterReplacement(paramDef.getType(), value);
-                result = result.replace("{{" + paramDef.getName() + "}}", replacement);
+                result = replacePlaceholder(result, paramDef.getName(), replacement);
             }
         }
         
