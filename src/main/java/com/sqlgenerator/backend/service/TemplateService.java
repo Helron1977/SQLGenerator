@@ -327,9 +327,11 @@ public class TemplateService {
         String missingList = String.join(", ", missing);
         return new IllegalArgumentException(
             String.format(
-                "❌ Fichier '%s' : Placeholders non définis dans les paramètres : %s\n" +
-                "   Solution : Ajoutez les paramètres manquants avec -- @param: ou -- @param-file:\n" +
-                "   Exemple : -- @param: %s|text|Description|true",
+                """
+                ❌ Fichier '%s' : Placeholders non définis dans les paramètres : %s
+                   Solution : Ajoutez les paramètres manquants avec -- @param: ou -- @param-file:
+                   Exemple : -- @param: %s|text|Description|true
+                """,
                 filename, missingList, missing.iterator().next()
             )
         );

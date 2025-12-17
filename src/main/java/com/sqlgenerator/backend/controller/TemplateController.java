@@ -44,8 +44,10 @@ public class TemplateController {
     @GetMapping
     @Operation(
             summary = "Lister les templates SQL disponibles",
-            description = "Retourne, pour chaque template SQL disponible, la description complète des schémas "
-                    + "(modes unitaire et masse) à utiliser côté front pour appeler les endpoints /api/scripts/{id}."
+            description = """
+                    Retourne, pour chaque template SQL disponible, la description complète des schémas
+                    (modes unitaire et masse) à utiliser côté front pour appeler les endpoints /api/scripts/{id}.
+                    """
     )
     @ApiResponses({
             @ApiResponse(
@@ -71,8 +73,10 @@ public class TemplateController {
     @GetMapping("/{id}")
     @Operation(
             summary = "Obtenir le schéma d'un template",
-            description = "Retourne la description du template (modes unitaire et masse) pour le template spécifié. "
-                    + "Permet au front de savoir quels champs afficher et comment appeler les endpoints de génération."
+            description = """
+                    Retourne la description du template (modes unitaire et masse) pour le template spécifié.
+                    Permet au front de savoir quels champs afficher et comment appeler les endpoints de génération.
+                    """
     )
     @ApiResponses({
             @ApiResponse(
@@ -105,14 +109,17 @@ public class TemplateController {
     @GetMapping("/{id}/request-body")
     @Operation(
             summary = "Obtenir le JSON du body à copier-coller (pour tests manuels)",
-            description = "⚠️ **Usage : Tests manuels uniquement** (Swagger, Postman, etc.)\n\n" +
-                    "Retourne uniquement le JSON avec les paramètres et leurs valeurs d'exemple, " +
-                    "prêt à être copié-collé dans le body de POST /api/scripts/{id}. " +
-                    "\n\n" +
-                    "Le mode peut être spécifié via le query parameter 'mode' (unitaire par défaut, masse pour le mode masse). " +
-                    "\n\n" +
-                    "**Pour le frontend** : Utilisez plutôt GET /api/templates/{id} qui retourne le schéma complet " +
-                    "avec tous les détails (labels, types, validations, etc.) pour construire le formulaire."
+            description = """
+                    ⚠️ **Usage : Tests manuels uniquement** (Swagger, Postman, etc.)
+                    
+                    Retourne uniquement le JSON avec les paramètres et leurs valeurs d'exemple,
+                    prêt à être copié-collé dans le body de POST /api/scripts/{id}.
+                    
+                    Le mode peut être spécifié via le query parameter 'mode' (unitaire par défaut, masse pour le mode masse).
+                    
+                    **Pour le frontend** : Utilisez plutôt GET /api/templates/{id} qui retourne le schéma complet
+                    avec tous les détails (labels, types, validations, etc.) pour construire le formulaire.
+                    """
     )
     @ApiResponses({
             @ApiResponse(

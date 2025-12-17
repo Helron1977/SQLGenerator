@@ -138,7 +138,7 @@ public class FormSchemaService {
             }
 
             // Exclure les fichiers du JSON (ils doivent être uploadés via multipart, pas dans le JSON)
-            if ("file".equals(field.getType())) {
+            if (TemplateConstants.FIELD_TYPE_FILE.equals(field.getType())) {
                 continue;
             }
 
@@ -153,25 +153,48 @@ public class FormSchemaService {
      * Retourne une valeur d'exemple réaliste pour un champ dans un JSON.
      */
     private Object getExampleValueForJson(FormField field) {
-        switch (field.getType()) {
-            case "select":
-                if (field.getOptions() != null && !field.getOptions().isEmpty()) {
-                    return field.getOptions().get(0);
-                }
-                return "";
-            case "number":
-            case "integer":
-                return 123;
-            case "date":
-                return "30/11/25";
-            case "text":
-            default:
-                // Valeur d'exemple selon le nom du champ
-                if ("ticket".equals(field.getName())) {
-                    return "dc905fff-27a6-452f-aa0d-360c6c37b94a";
-                }
-                return "example-value";
+        String fieldType = field.getType();
+        
+        if (TemplateConstants.FIELD_TYPE_SELECT.equals(fieldType)) {
+            return getSelectExampleValue(field);
         }
+        
+        if (TemplateConstants.FIELD_TYPE_NUMBER.equals(fieldType)) {
+            return 123;
+        }
+        
+        if (TemplateConstants.FIELD_TYPE_DATE.equals(fieldType)) {
+            return "30/11/25";
+        }
+        
+        // Type text ou par défaut
+        return getTextExampleValue(field);
+    }
+
+    /**
+     * Retourne une valeur d'exemple pour un champ de type select.
+     * 
+     * @param field Champ de type select
+     * @return Première option disponible, ou chaîne vide
+     */
+    private Object getSelectExampleValue(FormField field) {
+        if (field.getOptions() != null && !field.getOptions().isEmpty()) {
+            return field.getOptions().get(0);
+        }
+        return "";
+    }
+
+    /**
+     * Retourne une valeur d'exemple pour un champ de type text.
+     * 
+     * @param field Champ de type text
+     * @return Valeur d'exemple selon le nom du champ
+     */
+    private Object getTextExampleValue(FormField field) {
+        if (TemplateConstants.TICKET_PARAM.equals(field.getName())) {
+            return "dc905fff-27a6-452f-aa0d-360c6c37b94a";
+        }
+        return "example-value";
     }
 
     /**
@@ -224,18 +247,12 @@ public class FormSchemaService {
         List<FormField> fields = new ArrayList<>();
 
         // Champ ticket
-        FormField ticket = new FormField();
-        ticket.setName("ticket");
-        ticket.setType("text");
-        ticket.setLabel("Numéro du ticket");
-        ticket.setRequired(true);
-        ticket.setHelpText("Identifiant fonctionnel du ticket (ex: JIRA, UUID, ...)");
-        fields.add(ticket);
+        fields.add(createTicketField());
 
         // Champ executionType
         FormField executionType = new FormField();
-        executionType.setName("executionType");
-        executionType.setType("select");
+        executionType.setName(TemplateConstants.EXECUTION_TYPE_PARAM);
+        executionType.setType(TemplateConstants.FIELD_TYPE_SELECT);
         executionType.setLabel("Type d'exécution");
         executionType.setRequired(true);
 
@@ -272,18 +289,12 @@ public class FormSchemaService {
         List<FormField> fields = new ArrayList<>();
 
         // ticket (même champ que pour le mode unitaire)
-        FormField ticket = new FormField();
-        ticket.setName("ticket");
-        ticket.setType("text");
-        ticket.setLabel("Numéro du ticket");
-        ticket.setRequired(true);
-        ticket.setHelpText("Identifiant fonctionnel du ticket (ex: JIRA, UUID, ...)");
-        fields.add(ticket);
+        fields.add(createTicketField());
 
         // masseFile
         FormField masseFile = new FormField();
-        masseFile.setName("masseFile");
-        masseFile.setType("file");
+        masseFile.setName(TemplateConstants.MASSE_FILE_PARAM);
+        masseFile.setType(TemplateConstants.FIELD_TYPE_FILE);
         masseFile.setLabel("Fichier CSV (mode masse)");
         masseFile.setRequired(true);
 
@@ -298,6 +309,21 @@ public class FormSchemaService {
     }
 
     /**
+     * Crée le champ "ticket" standard utilisé dans tous les formulaires.
+     * 
+     * @return FormField configuré pour le ticket
+     */
+    private FormField createTicketField() {
+        FormField ticket = new FormField();
+        ticket.setName(TemplateConstants.TICKET_PARAM);
+        ticket.setType(TemplateConstants.FIELD_TYPE_TEXT);
+        ticket.setLabel("Numéro du ticket");
+        ticket.setRequired(true);
+        ticket.setHelpText("Identifiant fonctionnel du ticket (ex: JIRA, UUID, ...)");
+        return ticket;
+    }
+
+    /**
      * Construit un FormField à partir d'un ParameterDefinition.
      */
     private FormField buildFieldFromParameter(ParameterDefinition param) {
@@ -307,25 +333,39 @@ public class FormSchemaService {
         field.setLabel(param.getLabel() != null ? param.getLabel() : param.getName());
 
         if (param.isFile()) {
-            field.setType("file");
+            field.setType(TemplateConstants.FIELD_TYPE_FILE);
             field.setHelpText("Fichier texte, 1 valeur par ligne (utilisé pour les clauses IN).");
         } else {
-            String type = param.getType() != null ? param.getType().toLowerCase() : "text";
-            switch (type) {
-                case "number":
-                case "integer":
-                    field.setType("number");
-                    break;
-                case "date":
-                    field.setType("date");
-                    field.setHelpText("Format attendu : " + TemplateConstants.DATE_FORMAT + " (ex: 30/11/25)");
-                    break;
-                default:
-                    field.setType("text");
+            String type = param.getType() != null ? param.getType().toLowerCase() : TemplateConstants.FIELD_TYPE_TEXT;
+            field.setType(mapParameterTypeToFieldType(type));
+            if (TemplateConstants.FIELD_TYPE_DATE.equals(field.getType())) {
+                field.setHelpText("Format attendu : " + TemplateConstants.DATE_FORMAT + " (ex: 30/11/25)");
             }
         }
 
         return field;
+    }
+
+    /**
+     * Mappe un type de paramètre SQL vers un type de champ formulaire.
+     * 
+     * @param paramType Type du paramètre (number, integer, date, text, etc.)
+     * @return Type de champ formulaire correspondant
+     */
+    private String mapParameterTypeToFieldType(String paramType) {
+        if (paramType == null) {
+            return TemplateConstants.FIELD_TYPE_TEXT;
+        }
+        
+        switch (paramType) {
+            case "number":
+            case "integer":
+                return TemplateConstants.FIELD_TYPE_NUMBER;
+            case "date":
+                return TemplateConstants.FIELD_TYPE_DATE;
+            default:
+                return TemplateConstants.FIELD_TYPE_TEXT;
+        }
     }
 
     /**

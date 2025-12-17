@@ -131,5 +131,42 @@ public final class TemplateConstants {
      * Nom du paramètre pour le fichier CSV en mode masse.
      */
     public static final String MASSE_FILE_PARAM = "masseFile";
+
+    /**
+     * Nom du paramètre pour le ticket (obligatoire dans tous les formulaires).
+     */
+    public static final String TICKET_PARAM = "ticket";
+
+    /**
+     * Nom du paramètre pour le type d'exécution.
+     */
+    public static final String EXECUTION_TYPE_PARAM = "executionType";
+
+    // ========== Types de Champs de Formulaire ==========
+
+    /**
+     * Type de champ formulaire : texte.
+     */
+    public static final String FIELD_TYPE_TEXT = "text";
+
+    /**
+     * Type de champ formulaire : nombre.
+     */
+    public static final String FIELD_TYPE_NUMBER = "number";
+
+    /**
+     * Type de champ formulaire : date.
+     */
+    public static final String FIELD_TYPE_DATE = "date";
+
+    /**
+     * Type de champ formulaire : sélection (select).
+     */
+    public static final String FIELD_TYPE_SELECT = "select";
+
+    /**
+     * Type de champ formulaire : fichier.
+     */
+    public static final String FIELD_TYPE_FILE = "file";
 }
 

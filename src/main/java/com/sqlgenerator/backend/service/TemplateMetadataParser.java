@@ -100,11 +100,13 @@ public class TemplateMetadataParser {
         if (id == null || id.trim().isEmpty()) {
             throw new IllegalArgumentException(
                 String.format(
-                    "❌ Fichier '%s' : L'ID est obligatoire.\n" +
-                    "   Solution : Ajoutez une ligne au début du fichier :\n" +
-                    "   -- @id: votre-identifiant-unique\n" +
-                    "   \n" +
-                    "   L'ID doit être unique et ne contenir que des lettres, chiffres et tirets.",
+                    """
+                    ❌ Fichier '%s' : L'ID est obligatoire.
+                       Solution : Ajoutez une ligne au début du fichier :
+                       -- @id: votre-identifiant-unique
+                       
+                       L'ID doit être unique et ne contenir que des lettres, chiffres et tirets.
+                    """,
                     filename
                 )
             );
