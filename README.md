@@ -45,6 +45,59 @@ Ouvrez votre navigateur : **http://localhost:8080/swagger-ui/index.html**
 
 ---
 
+## 🏗️ Architecture du Domaine SQLGENERATOR
+
+Le domaine SQLGENERATOR est organisé en **trois sous-domaines distincts**, chacun ayant une responsabilité claire et des clients spécifiques :
+
+### 📋 Sous-domaine "Form Schema" (`FormSchemaController`)
+
+**Responsabilité** : Exposer les schémas de formulaires construits à partir des templates SQL.
+
+- **Ressources** : `FormSchema` (schémas JSON pour le frontend, dérivés des `TemplateDefinition`)
+- **Opérations** : GET uniquement (lecture des schémas)
+- **Clients** : Frontend (construction de formulaires dynamiques)
+- **Endpoints** :
+  - `GET /api/forms` : Liste tous les schémas de formulaires disponibles
+  - `GET /api/forms/{id}` : Schéma de formulaire complet pour un template
+  - `GET /api/forms/{id}/request-body` : JSON prêt à copier-coller pour tests manuels
+
+**Justification** : Séparation claire entre l'**exposition des schémas de formulaires** (métadonnées pour construire les formulaires) et la **génération de ressources** (scripts SQL). Le frontend a besoin uniquement des schémas pour construire les formulaires, sans déclencher de génération.
+
+### ⚙️ Sous-domaine "Script Generation" (`ScriptController`)
+
+**Responsabilité** : Générer des scripts SQL exécutables à partir de templates et de paramètres.
+
+- **Ressources** : Script (fichier SQL généré, téléchargeable)
+- **Opérations** : POST (création de ressource)
+- **Clients** : Frontend, outils externes, intégrations
+- **Endpoints** :
+  - `POST /api/scripts/{id}` : Génération mode unitaire (ou avec clause IN)
+  - `POST /api/scripts/{id}/masse` : Génération mode masse (CSV → N scripts)
+
+**Justification** : Conforme aux principes REST : **POST = création de ressource**. Le script SQL généré est une ressource nouvelle, créée à la demande. Cette séparation permet d'évoluer indépendamment la logique de génération (batching, formatage, etc.) sans impacter le catalogue.
+
+### 🔧 Sous-domaine "Administration" (`AdminController`)
+
+**Responsabilité** : Opérations d'administration et tests d'intégration système.
+
+- **Opérations** : POST (opérations d'administration)
+- **Clients** : DevOps, administrateurs, pipelines CI/CD
+- **Endpoints** :
+  - `POST /api/admin/integration-test` : Tests d'intégration complets
+
+**Justification** : Séparation des **opérations d'administration** (tests, validations système) des opérations métier (exposition de schémas, génération de scripts). Les clients sont différents (opérateurs vs utilisateurs finaux), les permissions peuvent être distinctes, et l'évolution est indépendante.
+
+### 🎯 Avantages de cette Architecture
+
+1. **Séparation des responsabilités** : Chaque contrôleur a un contrat clair et isolé
+2. **Séparation des clients** : Frontend (Templates/Scripts) vs DevOps (Admin)
+3. **Séparation des contrats** : JSON (Templates) vs Fichiers binaires (Scripts) vs Opérations (Admin)
+4. **Évolutivité** : Chaque sous-domaine peut évoluer indépendamment
+5. **Testabilité** : Tests unitaires isolés par responsabilité
+6. **Alignement REST** : Templates = ressources de catalogue (GET), Scripts = création de ressources (POST)
+
+---
+
 ## 📂 Structure du Projet
 
 ```
@@ -52,8 +105,9 @@ SQLGenerator/
 ├── src/main/
 │   ├── java/com/sqlgenerator/backend/
 │   │   ├── controller/
-│   │   │   ├── TemplateController.java    # API des templates (GET /api/templates)
-│   │   │   └── ScriptController.java      # API de génération (POST /api/scripts/{id})
+│   │   │   ├── FormSchemaController.java  # Sous-domaine "Form Schema"
+│   │   │   ├── ScriptController.java       # Sous-domaine "Script Generation"
+│   │   │   └── AdminController.java        # Sous-domaine "Administration"
 │   │   ├── service/
 │   │   │   ├── TemplateService.java       # Gestion des templates
 │   │   │   ├── TemplateMetadataParser.java # Parsing des métadonnées SQL
@@ -118,27 +172,27 @@ Utilisez `{{nom_parametre}}` dans votre SQL. Ils seront remplacés automatiqueme
 
 ## 🔌 Utilisation de l'API
 
-### 1️⃣ Lister les Templates Disponibles
+### 1️⃣ Lister les Schémas de Formulaires Disponibles
 
 ```http
-GET /api/templates
+GET /api/forms
 ```
 
-**Réponse** : Liste des templates avec leurs schémas (modes unitaire/masse, champs, etc.)
+**Réponse** : Liste des schémas de formulaires avec leurs métadonnées (modes unitaire/masse, champs, etc.)
 
-### 2️⃣ Obtenir un Template Spécifique
+### 2️⃣ Obtenir un Schéma de Formulaire Spécifique
 
 ```http
-GET /api/templates/{id}
+GET /api/forms/{id}
 ```
 
-**Réponse** : Schéma complet du template (pour construire un formulaire dynamique)
+**Réponse** : Schéma complet du formulaire (pour construire un formulaire dynamique)
 
 ### 3️⃣ Obtenir le JSON de Test
 
 ```http
-GET /api/templates/{id}/request-body?mode=unitaire
-GET /api/templates/{id}/request-body?mode=masse
+GET /api/forms/{id}/request-body?mode=unitaire
+GET /api/forms/{id}/request-body?mode=masse
 ```
 
 **Réponse** : JSON prêt à copier-coller dans Swagger pour tester
@@ -197,6 +251,36 @@ mvn test -Dtest=TemplateMetadataParserTest
 
 ## 📚 Documentation Complémentaire
 
+### Diagramme de Contexte (Domain-Driven Design)
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    Domaine SQLGENERATOR                      │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌──────────────────┐  ┌──────────────────┐   ┌───────────┐  │
+│  │ Template Catalog │  │ Script Generation│   │ Template  │  │
+│  │  (TemplateCtrl)  │  │  (ScriptCtrl)    │   │Management │  │
+│  │                  │  │                  │   │(AdminCtrl)│  │
+│  │ GET /templates   │  │ POST /scripts    │   │POST /admin│  │
+│  │                  │  │                  │   │           │  │
+│  │ Ressources:      │  │ Ressources:      │   │ Opérations│  │
+│  │ - FormSchema     │  │ - Script (file)  │   │ - Upload  │  │
+│  │ - TemplateDef    │  │                  │   │ - Tests   │  │
+│  └────────┬─────────┘  └────────┬─────────┘   └─────┬─────┘  │
+│           │                     │                   │        │
+└───────────┼─────────────────────┼───────────────────┼────────┘
+            │                     │                   │
+    ┌───────▼───────┐    ┌────────▼────────┐  ┌───────▼──────┐
+    │   Frontend    │    │ Outils externes │  │   DevOps     │
+    │ (Formulaires) │    │ (Intégrations)  │  │ (Maintenance)│
+    └───────────────┘    └─────────────────┘  └──────────────┘
+```
+
+**Légende** :
+- **Form Schema** : Fournit les schémas de formulaires pour construire les interfaces
+- **Script Generation** : Crée les ressources Script (fichiers SQL générés)
+- **Administration** : Opérations d'administration et tests d'intégration système
 
 ---
 

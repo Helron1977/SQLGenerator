@@ -77,7 +77,7 @@ class AdminControllerTest {
      * La couverture de code est garantie par :
      * 1. L'endpoint est appelé en production via POST /api/admin/integration-test
      * 2. Le endpoint lui-même est un test d'intégration qui teste toute l'application
-     * 3. Les autres tests (ScriptController, TemplateController) couvrent les fonctionnalités principales
+     * 3. Les autres tests (ScriptController, FormSchemaController) couvrent les fonctionnalités principales
      * 
      * Pour tester manuellement : POST http://localhost:8080/api/admin/integration-test
      */

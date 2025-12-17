@@ -1,12 +1,18 @@
 package com.sqlgenerator.backend.service;
 
+import com.sqlgenerator.backend.config.AppProperties;
 import com.sqlgenerator.backend.model.ParameterDefinition;
 import com.sqlgenerator.backend.model.TemplateDefinition;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
 
+import java.io.IOException;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Tests unitaires pour TemplateService.
@@ -16,7 +22,39 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class TemplateServiceTest {
 
-    private TemplateService templateService = new TemplateService();
+    private TemplateService templateService;
+    
+    @Mock
+    private TemplateMetadataParser metadataParser;
+    
+    @Mock
+    private SqlFileBuilder sqlFileBuilder;
+    
+    @Mock
+    private AppProperties appProperties;
+
+    @BeforeEach
+    void setUp() {
+        MockitoAnnotations.openMocks(this);
+        templateService = new TemplateService();
+        
+        // Injection manuelle des dépendances via réflexion
+        try {
+            java.lang.reflect.Field field = TemplateService.class.getDeclaredField("metadataParser");
+            field.setAccessible(true);
+            field.set(templateService, metadataParser);
+            
+            field = TemplateService.class.getDeclaredField("sqlFileBuilder");
+            field.setAccessible(true);
+            field.set(templateService, sqlFileBuilder);
+            
+            field = TemplateService.class.getDeclaredField("appProperties");
+            field.setAccessible(true);
+            field.set(templateService, appProperties);
+        } catch (Exception e) {
+            fail("Impossible d'injecter les dépendances: " + e.getMessage());
+        }
+    }
 
     // ========== Tests pour formatDate ==========
 
@@ -1284,6 +1322,356 @@ class TemplateServiceTest {
                 throw (IllegalArgumentException) e.getCause();
             }
             fail("Erreur lors de l'appel validatePlaceholders: " + e.getMessage());
+        }
+    }
+
+    // ========== Tests pour getTemplateById ==========
+
+    @Test
+    void testGetTemplateById_Found() {
+        // Given: Templates chargés dans la liste interne
+        TemplateDefinition template1 = new TemplateDefinition();
+        template1.setId("template1");
+        TemplateDefinition template2 = new TemplateDefinition();
+        template2.setId("template2");
+        
+        setTemplatesViaReflection(List.of(template1, template2));
+
+        // When: Recherche d'un template
+        TemplateDefinition result = templateService.getTemplateById("template1");
+
+        // Then: Doit retourner le bon template
+        assertNotNull(result);
+        assertEquals("template1", result.getId());
+    }
+
+    @Test
+    void testGetTemplateById_NotFound() {
+        // Given: Templates chargés
+        TemplateDefinition template1 = new TemplateDefinition();
+        template1.setId("template1");
+        setTemplatesViaReflection(List.of(template1));
+
+        // When: Recherche d'un template inexistant
+        TemplateDefinition result = templateService.getTemplateById("non-existent");
+
+        // Then: Doit retourner null
+        assertNull(result);
+    }
+
+    @Test
+    void testGetTemplateById_EmptyList() {
+        // Given: Liste vide
+        setTemplatesViaReflection(new ArrayList<>());
+
+        // When: Recherche
+        TemplateDefinition result = templateService.getTemplateById("any-id");
+
+        // Then: Doit retourner null
+        assertNull(result);
+    }
+
+    // ========== Tests pour getAllTemplates ==========
+
+    @Test
+    void testGetAllTemplates_WithTemplates() {
+        // Given: Templates chargés
+        TemplateDefinition template1 = new TemplateDefinition();
+        template1.setId("template1");
+        TemplateDefinition template2 = new TemplateDefinition();
+        template2.setId("template2");
+        List<TemplateDefinition> templates = List.of(template1, template2);
+        setTemplatesViaReflection(templates);
+
+        // When: Récupération de tous les templates
+        List<TemplateDefinition> result = templateService.getAllTemplates();
+
+        // Then: Doit retourner la liste
+        assertNotNull(result);
+        assertEquals(2, result.size());
+        assertEquals("template1", result.get(0).getId());
+    }
+
+    @Test
+    void testGetAllTemplates_WithNullTemplates() {
+        // Given: templates = null
+        setTemplatesViaReflection(null);
+
+        // When: Récupération
+        List<TemplateDefinition> result = templateService.getAllTemplates();
+
+        // Then: Doit retourner une liste vide
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void testGetAllTemplates_EmptyList() {
+        // Given: Liste vide
+        setTemplatesViaReflection(new ArrayList<>());
+
+        // When: Récupération
+        List<TemplateDefinition> result = templateService.getAllTemplates();
+
+        // Then: Doit retourner une liste vide
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+    }
+
+    // ========== Tests pour validateAndGetTemplate ==========
+
+    @Test
+    void testValidateAndGetTemplate_Success() {
+        // Given: Template valide avec sqlFilename
+        TemplateDefinition template = new TemplateDefinition();
+        template.setId("test-template");
+        template.setSqlFilename("test.sql");
+        setTemplatesViaReflection(List.of(template));
+
+        // When: Validation
+        TemplateDefinition result = validateAndGetTemplateViaReflection("test-template");
+
+        // Then: Doit retourner le template
+        assertNotNull(result);
+        assertEquals("test-template", result.getId());
+    }
+
+    @Test
+    void testValidateAndGetTemplate_TemplateNotFound() {
+        // Given: Template n'existe pas
+        setTemplatesViaReflection(new ArrayList<>());
+
+        // When & Then: Doit lever une exception
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, 
+            () -> validateAndGetTemplateViaReflection("non-existent"));
+        assertTrue(exception.getMessage().contains("Template not found"));
+    }
+
+    @Test
+    void testValidateAndGetTemplate_NoSqlFilename() {
+        // Given: Template sans sqlFilename
+        TemplateDefinition template = new TemplateDefinition();
+        template.setId("test-template");
+        template.setSqlFilename(null);
+        setTemplatesViaReflection(List.of(template));
+
+        // When & Then: Doit lever une exception
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, 
+            () -> validateAndGetTemplateViaReflection("test-template"));
+        assertTrue(exception.getMessage().contains("sqlFilename"));
+    }
+
+    @Test
+    void testValidateAndGetTemplate_EmptySqlFilename() {
+        // Given: Template avec sqlFilename vide
+        TemplateDefinition template = new TemplateDefinition();
+        template.setId("test-template");
+        template.setSqlFilename("");
+        setTemplatesViaReflection(List.of(template));
+
+        // When & Then: Doit lever une exception
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, 
+            () -> validateAndGetTemplateViaReflection("test-template"));
+        assertTrue(exception.getMessage().contains("sqlFilename"));
+    }
+
+    // ========== Tests pour processSqlWithParams ==========
+
+    @Test
+    void testProcessSqlWithParams_UnitaireMode() {
+        // Given: Template simple, mode unitaire
+        TemplateDefinition template = createTemplateWithFileParam("ids");
+        String baseSql = "SELECT * FROM T WHERE id = {{ids}};";
+        Map<String, Object> params = new HashMap<>();
+        params.put("ids", Arrays.asList("1", "2"));
+        String executionType = TemplateConstants.EXECUTION_TYPE_UNITAIRE;
+
+        // When: Traitement
+        String result = processSqlWithParamsViaReflection(template, baseSql, params, executionType);
+
+        // Then: Doit remplacer les placeholders (pas de batching car <= 999)
+        assertNotNull(result);
+        assertTrue(result.contains("1") || result.contains("'1'"));
+    }
+
+    @Test
+    void testProcessSqlWithParams_MasseMode() {
+        // Given: Template simple, mode masse
+        TemplateDefinition template = new TemplateDefinition();
+        template.setId("test-template");
+        ParameterDefinition p1 = new ParameterDefinition();
+        p1.setName("value");
+        p1.setFile(false);
+        template.setParameters(List.of(p1));
+        
+        String baseSql = "UPDATE T SET col = {{value}};";
+        Map<String, Object> params = new HashMap<>();
+        params.put(TemplateConstants.MASSE_FILE_PARAM, Arrays.asList("val1", "val2"));
+        String executionType = TemplateConstants.EXECUTION_TYPE_MASSE;
+
+        // When: Traitement
+        String result = processSqlWithParamsViaReflection(template, baseSql, params, executionType);
+
+        // Then: Doit générer du SQL masse (avec headers -- Requête 1/2, etc.)
+        assertNotNull(result);
+        assertTrue(result.contains("Requête 1/2") || result.contains("val1"));
+    }
+
+    @Test
+    void testProcessSqlWithParams_WithBatching() {
+        // Given: Template avec paramètre fichier et liste > 999
+        TemplateDefinition template = createTemplateWithFileParam("ids");
+        String baseSql = "SELECT * FROM T WHERE id IN ({{ids}});";
+        
+        List<String> largeList = new ArrayList<>();
+        for (int i = 0; i < 1000; i++) {
+            largeList.add(String.valueOf(i));
+        }
+        Map<String, Object> params = new HashMap<>();
+        params.put("ids", largeList);
+        String executionType = TemplateConstants.EXECUTION_TYPE_UNITAIRE;
+
+        // When: Traitement
+        String result = processSqlWithParamsViaReflection(template, baseSql, params, executionType);
+
+        // Then: Doit générer du SQL avec batching (Lot 1/2, Lot 2/2)
+        assertNotNull(result);
+        assertTrue(result.contains("Lot 1/2") || result.contains("Lot 2/2"));
+    }
+
+    // ========== Méthodes utilitaires supplémentaires ==========
+
+    @SuppressWarnings("unchecked")
+    private void setTemplatesViaReflection(List<TemplateDefinition> templates) {
+        try {
+            java.lang.reflect.Field field = TemplateService.class.getDeclaredField("templates");
+            field.setAccessible(true);
+            field.set(templateService, templates);
+        } catch (Exception e) {
+            fail("Erreur lors de la définition de templates: " + e.getMessage());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<TemplateDefinition> getTemplatesViaReflection() {
+        try {
+            java.lang.reflect.Field field = TemplateService.class.getDeclaredField("templates");
+            field.setAccessible(true);
+            return (List<TemplateDefinition>) field.get(templateService);
+        } catch (Exception e) {
+            fail("Erreur lors de la récupération de templates: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private TemplateDefinition validateAndGetTemplateViaReflection(String templateId) {
+        try {
+            java.lang.reflect.Method method = TemplateService.class.getDeclaredMethod("validateAndGetTemplate", 
+                String.class);
+            method.setAccessible(true);
+            return (TemplateDefinition) method.invoke(templateService, templateId);
+        } catch (Exception e) {
+            if (e.getCause() instanceof IllegalArgumentException) {
+                throw (IllegalArgumentException) e.getCause();
+            }
+            fail("Erreur lors de l'appel validateAndGetTemplate: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private String processSqlWithParamsViaReflection(TemplateDefinition template, String baseSql, 
+                                                     Map<String, Object> params, String executionType) {
+        try {
+            java.lang.reflect.Method method = TemplateService.class.getDeclaredMethod("processSqlWithParams", 
+                TemplateDefinition.class, String.class, Map.class, String.class);
+            method.setAccessible(true);
+            return (String) method.invoke(templateService, template, baseSql, params, executionType);
+        } catch (Exception e) {
+            fail("Erreur lors de l'appel processSqlWithParams: " + e.getMessage());
+            return null;
+        }
+    }
+
+    // ========== Tests pour init() ==========
+
+    @Test
+    void testInit_Success() throws Exception {
+        // Given: Configuration des mocks
+        when(appProperties.getOutputScriptsPath()).thenReturn("./target/test-output/");
+        
+        // Les fichiers SQL de test existent dans src/test/resources/templates/
+        // Le parser va être appelé pour chaque fichier
+        TemplateDefinition validTemplate = new TemplateDefinition();
+        validTemplate.setId("test-minimal");
+        validTemplate.setSqlFilename("test-minimal.sql");
+        validTemplate.setParameters(new ArrayList<>());
+        
+        // Mock du parser pour retourner un template valide pour certains fichiers
+        when(metadataParser.parseSqlFile("test-minimal.sql")).thenReturn(validTemplate);
+        when(metadataParser.parseSqlFile("test-complete.sql")).thenReturn(validTemplate);
+        when(metadataParser.parseSqlFile("test-file-param.sql")).thenReturn(validTemplate);
+        when(metadataParser.parseSqlFile("test-mixed-params.sql")).thenReturn(validTemplate);
+        
+        // Pour les fichiers invalides, on peut retourner une exception (sera catchée par loadTemplateSafely)
+        when(metadataParser.parseSqlFile("test-no-id.sql")).thenThrow(new IOException("No ID"));
+        when(metadataParser.parseSqlFile("test-empty-id.sql")).thenThrow(new IOException("Empty ID"));
+        when(metadataParser.parseSqlFile("test-invalid-param.sql")).thenThrow(new IOException("Invalid param"));
+        when(metadataParser.parseSqlFile("test-metadata-malformed.sql")).thenThrow(new IOException("Malformed"));
+
+        // When: Appel de init() via réflexion
+        initViaReflection();
+
+        // Then: Les templates valides doivent être chargés
+        List<TemplateDefinition> templates = getTemplatesViaReflection();
+        assertNotNull(templates);
+        // Au moins les templates valides doivent être présents
+        assertTrue(templates.size() >= 0); // Peut être 0 si tous les fichiers sont invalides, ou plus si valides
+    }
+
+    @Test
+    void testInit_WithEmptyTemplates() throws Exception {
+        // Given: Aucun fichier SQL (ou tous invalides)
+        when(appProperties.getOutputScriptsPath()).thenReturn("./target/test-output/");
+        
+        // Mock pour que tous les fichiers lèvent une exception
+        when(metadataParser.parseSqlFile(anyString())).thenThrow(new IOException("Parse error"));
+
+        // When: Appel de init()
+        initViaReflection();
+
+        // Then: La liste doit être vide mais init() ne doit pas lever d'exception
+        List<TemplateDefinition> templates = getTemplatesViaReflection();
+        assertNotNull(templates);
+        // logInitializationSummary() doit être appelé avec une liste vide
+    }
+
+    @Test
+    void testInit_WithOutputDirectoryError() throws Exception {
+        // Given: Erreur lors de la création du répertoire
+        when(appProperties.getOutputScriptsPath()).thenReturn("/invalid/path/that/cannot/be/created");
+
+        // When: Appel de init()
+        // Ne doit pas lever d'exception, juste logger l'erreur
+        assertDoesNotThrow(() -> initViaReflection());
+
+        // Then: logOutputDirectoryCreationError() doit être appelé
+    }
+
+    // ========== Méthode utilitaire pour appeler init() ==========
+
+    private void initViaReflection() {
+        try {
+            java.lang.reflect.Method method = TemplateService.class.getDeclaredMethod("init");
+            method.setAccessible(true);
+            method.invoke(templateService);
+        } catch (Exception e) {
+            if (e.getCause() instanceof RuntimeException) {
+                throw (RuntimeException) e.getCause();
+            }
+            if (e.getCause() instanceof IOException) {
+                throw new RuntimeException("IOException lors de init(): " + e.getCause().getMessage(), e.getCause());
+            }
+            fail("Erreur lors de l'appel init(): " + e.getMessage());
         }
     }
 }

@@ -358,5 +358,10 @@ class ScriptControllerTest {
                         .content(objectMapper.writeValueAsString(jsonBody)))
                 .andExpect(status().isInternalServerError());
     }
+
+    // Note : Les méthodes privées (addTicketIfPresent, addTicketIfNotEmpty, isTicketNotEmpty)
+    // sont testées indirectement via les tests d'intégration MockMvc ci-dessus.
+    // Elles sont également couvertes par les tests d'intégration complets dans AdminController.integrationTest().
+    // Pas besoin de tests unitaires avec réflexion : les tests d'intégration suffisent et sont plus réalistes.
 }
 

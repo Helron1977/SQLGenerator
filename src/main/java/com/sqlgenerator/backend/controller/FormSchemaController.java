@@ -17,42 +17,49 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Contrôleur REST pour exposer les templates SQL et leurs schémas
- * construits à partir des métadonnées SQL.
- *
- * Objectif :
- * - Fournir au front un contrat simple (JSON) décrivant les templates disponibles
- *   et les schémas pour construire les requêtes (modes unitaire et masse).
+ * Sous-domaine "Form Schema" - Contrôleur REST pour exposer les schémas de formulaires.
+ * 
+ * <p><b>Responsabilité</b> : Exposer les schémas de formulaires (FormSchema) construits à partir des templates SQL.</p>
+ * 
+ * <p><b>Ressources</b> : FormSchema (schémas JSON pour le frontend, dérivés des TemplateDefinition)</p>
+ * <p><b>Opérations</b> : GET uniquement (lecture des schémas)</p>
+ * <p><b>Clients</b> : Frontend (construction de formulaires dynamiques)</p>
+ * 
+ * <p>Ce contrôleur fournit les métadonnées nécessaires au frontend pour construire
+ * dynamiquement les formulaires de génération de scripts SQL, sans déclencher de génération.</p>
+ * 
+ * <p>Note : Les schémas sont construits à partir des templates SQL gérés par {@link com.sqlgenerator.backend.service.TemplateService}.</p>
+ * <p>Voir aussi : {@link ScriptController} pour la génération effective des scripts.</p>
  */
 @RestController
-@RequestMapping("/api/templates")
+@RequestMapping("/api/forms")
 @CrossOrigin(origins = "*")
-@io.swagger.v3.oas.annotations.tags.Tag(name = "SQL Templates", description = "Gestion des templates SQL et leurs schémas")
-public class TemplateController {
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Form Schema", description = "Schémas de formulaires - Exposition des métadonnées pour construire les formulaires frontend")
+public class FormSchemaController {
 
     @Autowired
     private FormSchemaService formSchemaService;
 
     /**
-     * Retourne les schémas de templates pour tous les templates disponibles.
+     * Retourne les schémas de formulaires pour tous les templates disponibles.
      *
      * Utilisation côté front :
-     * 1. Appeler GET /api/templates pour récupérer la liste des FormSchema
+     * 1. Appeler GET /api/forms pour récupérer la liste des FormSchema
      * 2. Afficher la liste des templates et les champs de formulaire
      * 3. Construire ensuite le body pour POST /api/scripts/{id} (avec mode unitaire ou masse)
      */
     @GetMapping
     @Operation(
-            summary = "Lister les templates SQL disponibles",
+            summary = "Lister les schémas de formulaires disponibles",
             description = """
-                    Retourne, pour chaque template SQL disponible, la description complète des schémas
+                    Retourne, pour chaque template SQL disponible, la description complète des schémas de formulaires
                     (modes unitaire et masse) à utiliser côté front pour appeler les endpoints /api/scripts/{id}.
                     """
     )
     @ApiResponses({
             @ApiResponse(
                     responseCode = "200",
-                    description = "Liste des templates disponibles",
+                    description = "Liste des schémas de formulaires disponibles",
                     content = @Content(array = @ArraySchema(schema = @Schema(implementation = FormSchema.class)))
             )
     })
@@ -61,10 +68,10 @@ public class TemplateController {
     }
 
     /**
-     * Retourne le schéma d'un template donné.
+     * Retourne le schéma de formulaire pour un template donné.
      *
      * Utilisation côté front :
-     * 1. Appeler GET /api/templates/{id} pour récupérer le FormSchema de ce template
+     * 1. Appeler GET /api/forms/{id} pour récupérer le FormSchema de ce template
      * 2. Construire dynamiquement le formulaire (modes unitaire / masse)
      * 3. Poster les données vers /api/scripts/{id} (avec mode unitaire ou masse)
      *
@@ -72,21 +79,21 @@ public class TemplateController {
      */
     @GetMapping("/{id}")
     @Operation(
-            summary = "Obtenir le schéma d'un template",
+            summary = "Obtenir le schéma de formulaire d'un template",
             description = """
-                    Retourne la description du template (modes unitaire et masse) pour le template spécifié.
+                    Retourne la description du schéma de formulaire (modes unitaire et masse) pour le template spécifié.
                     Permet au front de savoir quels champs afficher et comment appeler les endpoints de génération.
                     """
     )
     @ApiResponses({
             @ApiResponse(
                     responseCode = "200",
-                    description = "Schéma de template trouvé",
+                    description = "Schéma de formulaire trouvé",
                     content = @Content(schema = @Schema(implementation = FormSchema.class))
             ),
             @ApiResponse(
                     responseCode = "404",
-                    description = "Template introuvable"
+                    description = "Schéma de formulaire introuvable (template inexistant)"
             )
     })
     public ResponseEntity<FormSchema> getTemplate(@PathVariable String id) {
@@ -101,7 +108,7 @@ public class TemplateController {
      * Retourne uniquement le JSON du body avec les paramètres (pour copier-coller dans Swagger).
      * 
      * ⚠️ Usage : Uniquement pour les tests manuels dans Swagger ou les clients HTTP.
-     * Pour le frontend, utilisez plutôt GET /api/templates/{id} qui retourne le schéma complet.
+     * Pour le frontend, utilisez plutôt GET /api/forms/{id} qui retourne le schéma complet.
      *
      * @param id identifiant du template
      * @param mode mode d'exécution : 'unitaire' (défaut) ou 'masse'
@@ -117,7 +124,7 @@ public class TemplateController {
                     
                     Le mode peut être spécifié via le query parameter 'mode' (unitaire par défaut, masse pour le mode masse).
                     
-                    **Pour le frontend** : Utilisez plutôt GET /api/templates/{id} qui retourne le schéma complet
+                    **Pour le frontend** : Utilisez plutôt GET /api/forms/{id} qui retourne le schéma complet
                     avec tous les détails (labels, types, validations, etc.) pour construire le formulaire.
                     """
     )
@@ -129,7 +136,7 @@ public class TemplateController {
             ),
             @ApiResponse(
                     responseCode = "404",
-                    description = "Template introuvable"
+                    description = "Schéma de formulaire introuvable (template inexistant)"
             ),
             @ApiResponse(
                     responseCode = "400",

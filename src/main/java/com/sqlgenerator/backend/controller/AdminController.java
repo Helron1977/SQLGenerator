@@ -21,17 +21,28 @@ import java.time.LocalDateTime;
 import java.util.*;
 
 /**
- * Contrôleur d'administration pour les tests d'intégration.
+ * Sous-domaine "Administration" - Contrôleur d'administration pour les opérations système.
  * 
- * Endpoints disponibles :
- * - POST /api/admin/integration-test : Test d'intégration complet
+ * <p><b>Responsabilité</b> : Opérations d'administration et tests d'intégration système.</p>
  * 
- * Note : La supervision (health check, métriques) est gérée au niveau supérieur du projet.
+ * <p><b>Opérations</b> : POST (opérations d'administration)</p>
+ * <p><b>Clients</b> : DevOps, administrateurs, pipelines CI/CD</p>
+ * 
+ * <p>Ce contrôleur sépare les opérations d'administration (tests, validations système) des opérations métier
+ * (exposition de schémas, génération de scripts). Les clients sont différents (opérateurs vs utilisateurs finaux),
+ * les permissions peuvent être distinctes, et l'évolution est indépendante.</p>
+ * 
+ * <p><b>Endpoints disponibles</b> :</p>
+ * <ul>
+ *   <li>POST /api/admin/integration-test : Test d'intégration complet</li>
+ * </ul>
+ * 
+ * <p><b>Note</b> : La supervision (health check, métriques) est gérée au niveau supérieur du projet.</p>
  */
 @RestController
 @RequestMapping("/api/admin")
 @CrossOrigin(origins = "*")
-@Tag(name = "Administration", description = "Tests d'intégration")
+@Tag(name = "Administration", description = "Opérations d'administration et tests d'intégration système")
 public class AdminController {
 
     @Autowired

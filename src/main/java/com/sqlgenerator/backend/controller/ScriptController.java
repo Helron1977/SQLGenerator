@@ -33,18 +33,29 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Contrôleur REST pour la génération de scripts SQL.
+ * Sous-domaine "Script Generation" - Contrôleur REST pour la génération de scripts SQL exécutables.
  * 
- * Endpoints disponibles :
- * - POST /api/scripts/{id} : mode unitaire (ou avec IN)
- * - POST /api/scripts/{id}/masse : mode masse (uniquement pour templates sans IN)
+ * <p><b>Responsabilité</b> : Générer des scripts SQL exécutables à partir de templates et de paramètres.</p>
  * 
- * Pour connaître les paramètres exacts d'un template, utilisez GET /api/templates/{id}
+ * <p><b>Ressources</b> : Script (fichier SQL généré, téléchargeable)</p>
+ * <p><b>Opérations</b> : POST (création de ressource)</p>
+ * <p><b>Clients</b> : Frontend, outils externes, intégrations</p>
+ * 
+ * <p>Conforme aux principes REST : POST = création de ressource. Le script SQL généré
+ * est une ressource nouvelle, créée à la demande.</p>
+ * 
+ * <p><b>Endpoints disponibles</b> :</p>
+ * <ul>
+ *   <li>POST /api/scripts/{id} : mode unitaire (ou avec clause IN)</li>
+ *   <li>POST /api/scripts/{id}/masse : mode masse (uniquement pour templates sans IN)</li>
+ * </ul>
+ * 
+ * <p>Pour connaître les paramètres exacts d'un template, utilisez {@link FormSchemaController#getTemplate(String)}</p>
  */
 @RestController
 @RequestMapping("/api/scripts")
 @CrossOrigin(origins = "*")
-@io.swagger.v3.oas.annotations.tags.Tag(name = "SQL Scripts", description = "Génération de scripts SQL à partir de templates paramétrés")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Script Generation", description = "Génération de scripts SQL - Création de ressources Script à partir de templates paramétrés")
 public class ScriptController {
 
     private static final Logger logger = LoggerFactory.getLogger(ScriptController.class);
@@ -67,7 +78,7 @@ public class ScriptController {
                     Ce mode génère une seule requête SQL avec les paramètres fournis.
                     Peut gérer les clauses IN (avec fichier) et les requêtes simples.
                     
-                    Vous pouvez utiliser du JSON (copiez-collez depuis GET /api/templates/{id}/request-body)
+                    Vous pouvez utiliser du JSON (copiez-collez depuis GET /api/forms/{id}/request-body)
                     ou des paramètres form-urlencoded.
                     Pour les paramètres IN, le fichier doit être uploadé via multipart (même en mode JSON).
                     """
@@ -76,7 +87,7 @@ public class ScriptController {
             description = """
                     Body JSON (optionnel).
                     ⚠️ IMPORTANT : Pour obtenir le JSON correct avec les paramètres de ce template,
-                    appelez d'abord GET /api/templates/{id}/request-body (ou ?mode=masse pour le mode masse)
+                    appelez d'abord GET /api/forms/{id}/request-body (ou ?mode=masse pour le mode masse)
                     et copiez-collez directement le JSON retourné.
                     Chaque template a ses propres paramètres, donc l'exemple varie selon le template.
                     """,
@@ -87,7 +98,7 @@ public class ScriptController {
                             type = "object",
                             description = """
                                     JSON avec les paramètres spécifiques à ce template.
-                                    Pour connaître la structure exacte, appelez GET /api/templates/{id}/request-body
+                                    Pour connaître la structure exacte, appelez GET /api/forms/{id}/request-body
                                     (ou ?mode=masse pour le mode masse) et copiez-collez le JSON retourné.
                                     """
                     )
@@ -240,7 +251,7 @@ public class ScriptController {
             description = """
                     Body JSON (optionnel).
                     ⚠️ IMPORTANT : Pour obtenir le JSON correct avec les paramètres de ce template,
-                    appelez d'abord GET /api/templates/{id}/request-body?mode=masse et copiez-collez directement le JSON retourné.
+                    appelez d'abord GET /api/forms/{id}/request-body?mode=masse et copiez-collez directement le JSON retourné.
                     Note : Le fichier CSV (masseFile) doit toujours être uploadé via multipart, même en mode JSON.
                     """,
             required = false,
@@ -250,7 +261,7 @@ public class ScriptController {
                             type = "object",
                             description = """
                                     JSON avec les paramètres spécifiques à ce template.
-                                    Pour connaître la structure exacte, appelez GET /api/templates/{id}/request-body?mode=masse
+                                    Pour connaître la structure exacte, appelez GET /api/forms/{id}/request-body?mode=masse
                                     et copiez-collez le JSON retourné.
                                     Le fichier CSV doit être uploadé séparément via multipart/form-data.
                                     """
@@ -290,7 +301,7 @@ public class ScriptController {
             
             Map<String, Object> params = new HashMap<>();
             
-            // Si JSON body est fourni, l'utiliser (copié depuis /api/templates/{id}/request-body?mode=masse -> massBodyStructure)
+            // Si JSON body est fourni, l'utiliser (copié depuis /api/forms/{id}/request-body?mode=masse -> massBodyStructure)
             if (hasJsonBody(jsonBody)) {
                 extractParamsFromJsonForMasse(jsonBody, params);
             } else {
