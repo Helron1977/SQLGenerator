@@ -249,6 +249,603 @@ class TemplateServiceTest {
         assertFalse(result);
     }
 
+    // ========== Tests pour removeMetadataComments ==========
+
+    @Test
+    void testRemoveMetadataComments_WithMetadata() {
+        // Given: SQL avec métadonnées
+        String sqlContent = """
+                -- @id: test-template
+                -- @name: Test Template
+                -- @param: param1|text|Description
+                
+                SELECT * FROM test WHERE id = {{param1}};
+                """;
+
+        // When: Suppression des métadonnées
+        String result = removeMetadataCommentsViaReflection(sqlContent);
+
+        // Then: Doit contenir uniquement le SQL
+        assertNotNull(result);
+        assertTrue(result.contains("SELECT * FROM test"));
+        assertFalse(result.contains("@id:"));
+        assertFalse(result.contains("@name:"));
+        assertFalse(result.contains("@param:"));
+    }
+
+    @Test
+    void testRemoveMetadataComments_WithoutMetadata() {
+        // Given: SQL sans métadonnées
+        String sqlContent = "SELECT * FROM test WHERE id = 42;";
+
+        // When: Suppression des métadonnées
+        String result = removeMetadataCommentsViaReflection(sqlContent);
+
+        // Then: Doit retourner le SQL tel quel
+        assertNotNull(result);
+        assertTrue(result.contains("SELECT * FROM test"));
+    }
+
+    @Test
+    void testRemoveMetadataComments_WithEmptyLines() {
+        // Given: SQL avec métadonnées et lignes vides
+        String sqlContent = """
+                -- @id: test-template
+                
+                -- @param: param1|text|Description
+                
+                SELECT * FROM test;
+                """;
+
+        // When: Suppression des métadonnées
+        String result = removeMetadataCommentsViaReflection(sqlContent);
+
+        // Then: Doit supprimer les lignes vides dans la section métadonnées
+        assertNotNull(result);
+        assertTrue(result.contains("SELECT * FROM test"));
+        assertFalse(result.contains("@id:"));
+    }
+
+    // ========== Tests pour replacePlaceholder ==========
+
+    @Test
+    void testReplacePlaceholder_SingleOccurrence() {
+        // Given: SQL avec un placeholder
+        String sql = "SELECT * FROM test WHERE id = {{param1}};";
+        String paramName = "param1";
+        String replacement = "42";
+
+        // When: Remplacement
+        String result = replacePlaceholderViaReflection(sql, paramName, replacement);
+
+        // Then: Doit remplacer le placeholder
+        assertEquals("SELECT * FROM test WHERE id = 42;", result);
+    }
+
+    @Test
+    void testReplacePlaceholder_MultipleOccurrences() {
+        // Given: SQL avec plusieurs occurrences du même placeholder
+        String sql = "SELECT * FROM test WHERE id = {{param1}} AND name = {{param1}};";
+        String paramName = "param1";
+        String replacement = "'test'";
+
+        // When: Remplacement
+        String result = replacePlaceholderViaReflection(sql, paramName, replacement);
+
+        // Then: Doit remplacer toutes les occurrences
+        assertEquals("SELECT * FROM test WHERE id = 'test' AND name = 'test';", result);
+    }
+
+    @Test
+    void testReplacePlaceholder_NoPlaceholder() {
+        // Given: SQL sans le placeholder
+        String sql = "SELECT * FROM test WHERE id = 42;";
+        String paramName = "param1";
+        String replacement = "test";
+
+        // When: Remplacement
+        String result = replacePlaceholderViaReflection(sql, paramName, replacement);
+
+        // Then: Doit retourner le SQL inchangé
+        assertEquals(sql, result);
+    }
+
+    // ========== Tests pour buildParameterReplacement ==========
+
+    @Test
+    void testBuildParameterReplacement_NullValue() {
+        // Given: Paramètre avec valeur null
+        ParameterDefinition param = createParameter("param1", "text", false);
+        Object value = null;
+
+        // When: Construction du remplacement
+        String result = buildParameterReplacementViaReflection(param, value);
+
+        // Then: Doit retourner NULL
+        assertEquals("NULL", result);
+    }
+
+    @Test
+    void testBuildParameterReplacement_EmptyString() {
+        // Given: Paramètre avec chaîne vide
+        ParameterDefinition param = createParameter("param1", "text", false);
+        Object value = "";
+
+        // When: Construction du remplacement
+        String result = buildParameterReplacementViaReflection(param, value);
+
+        // Then: Doit retourner NULL
+        assertEquals("NULL", result);
+    }
+
+    @Test
+    void testBuildParameterReplacement_TextValue() {
+        // Given: Paramètre texte avec valeur
+        ParameterDefinition param = createParameter("param1", "text", false);
+        Object value = "test value";
+
+        // When: Construction du remplacement
+        String result = buildParameterReplacementViaReflection(param, value);
+
+        // Then: Doit retourner la valeur avec guillemets
+        assertEquals("'test value'", result);
+    }
+
+    @Test
+    void testBuildParameterReplacement_FileParameter() {
+        // Given: Paramètre fichier avec liste
+        ParameterDefinition param = createParameter("ids", "file", true);
+        List<String> value = Arrays.asList("1", "2", "3");
+
+        // When: Construction du remplacement
+        String result = buildParameterReplacementViaReflection(param, value);
+
+        // Then: Doit retourner les valeurs formatées (formatSingleInClause retourne juste les valeurs, pas "IN")
+        assertNotNull(result);
+        assertNotEquals("NULL", result);
+        assertTrue(result.contains("1") || result.contains("'1'"));
+    }
+
+    // ========== Tests pour buildFileParameterReplacement ==========
+
+    @Test
+    void testBuildFileParameterReplacement_WithList() {
+        // Given: Liste de valeurs
+        List<String> value = Arrays.asList("1", "2", "3");
+
+        // When: Construction du remplacement
+        String result = buildFileParameterReplacementViaReflection(value);
+
+        // Then: Doit retourner une clause IN
+        assertNotNull(result);
+        assertTrue(result.contains("'1'") || result.contains("1"));
+    }
+
+    @Test
+    void testBuildFileParameterReplacement_WithEmptyList() {
+        // Given: Liste vide
+        List<String> value = new ArrayList<>();
+
+        // When: Construction du remplacement
+        String result = buildFileParameterReplacementViaReflection(value);
+
+        // Then: Doit retourner NULL
+        assertEquals("NULL", result);
+    }
+
+    @Test
+    void testBuildFileParameterReplacement_WithNullValues() {
+        // Given: Liste avec valeurs null/vides
+        List<String> value = Arrays.asList("1", null, "", "2");
+
+        // When: Construction du remplacement
+        String result = buildFileParameterReplacementViaReflection(value);
+
+        // Then: Doit filtrer les valeurs null/vides et retourner une clause IN
+        assertNotNull(result);
+        assertNotEquals("NULL", result);
+    }
+
+    // ========== Tests pour buildSimpleParameterReplacement ==========
+
+    @Test
+    void testBuildSimpleParameterReplacement_Text() {
+        // Given: Type text avec valeur
+        String type = "text";
+        Object value = "test value";
+
+        // When: Construction du remplacement
+        String result = buildSimpleParameterReplacementViaReflection(type, value);
+
+        // Then: Doit retourner la valeur avec guillemets
+        assertEquals("'test value'", result);
+    }
+
+    @Test
+    void testBuildSimpleParameterReplacement_Number() {
+        // Given: Type number avec valeur
+        String type = "number";
+        Object value = "42";
+
+        // When: Construction du remplacement
+        String result = buildSimpleParameterReplacementViaReflection(type, value);
+
+        // Then: Doit retourner la valeur sans guillemets
+        assertEquals("42", result);
+    }
+
+    @Test
+    void testBuildSimpleParameterReplacement_Date() {
+        // Given: Type date avec valeur
+        String type = "date";
+        Object value = "30/11/25";
+
+        // When: Construction du remplacement
+        String result = buildSimpleParameterReplacementViaReflection(type, value);
+
+        // Then: Doit retourner la date avec guillemets
+        assertEquals("'30/11/25'", result);
+    }
+
+    @Test
+    void testBuildSimpleParameterReplacement_NullValue() {
+        // Given: Type text avec valeur null
+        String type = "text";
+        Object value = null;
+
+        // When: Construction du remplacement
+        String result = buildSimpleParameterReplacementViaReflection(type, value);
+
+        // Then: Doit retourner NULL
+        assertEquals("NULL", result);
+    }
+
+    @Test
+    void testBuildSimpleParameterReplacement_EmptyString() {
+        // Given: Type text avec chaîne vide
+        String type = "text";
+        Object value = "";
+
+        // When: Construction du remplacement
+        String result = buildSimpleParameterReplacementViaReflection(type, value);
+
+        // Then: Doit retourner NULL
+        assertEquals("NULL", result);
+    }
+
+    // ========== Tests pour le batching IN (generateBatchedSql et associés) ==========
+
+    @Test
+    void testGenerateBatchedSql_NoFileParam() {
+        // Given: Template sans paramètre fichier
+        TemplateDefinition template = new TemplateDefinition();
+        template.setId("test-template");
+        template.setSqlFilename("test.sql");
+
+        ParameterDefinition p1 = new ParameterDefinition();
+        p1.setName("id");
+        p1.setType("number");
+        p1.setFile(false);
+        template.setParameters(List.of(p1));
+
+        String baseSql = "SELECT * FROM T WHERE id IN ({{ids}})";
+        Map<String, Object> params = new HashMap<>();
+        params.put("id", "42");
+
+        // When: Appel du batching
+        String result = generateBatchedSqlViaReflection(template, baseSql, params);
+
+        // Then: Sans paramètre fichier, on doit récupérer le SQL de base
+        assertEquals(baseSql, result);
+    }
+
+    @Test
+    void testGenerateBatchedSql_WithEmptyValues() {
+        // Given: Template avec paramètre fichier mais liste vide
+        TemplateDefinition template = createTemplateWithFileParam("ids");
+        String baseSql = "SELECT * FROM T WHERE id IN ({{ids}})";
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("ids", new ArrayList<String>());
+
+        // When: Appel du batching
+        String result = generateBatchedSqlViaReflection(template, baseSql, params);
+
+        // Then: Liste vide -> on renvoie le SQL de base
+        assertEquals(baseSql, result);
+    }
+
+    @Test
+    void testGenerateBatchedSql_WithSingleBatch() {
+        // Given: Template avec paramètre fichier et liste <= ORACLE_IN_MAX_SIZE
+        TemplateDefinition template = createTemplateWithFileParam("ids");
+        String baseSql = "SELECT * FROM T WHERE id IN ({{ids}})";
+
+        List<String> values = Arrays.asList("1", "2", "3");
+        Map<String, Object> params = new HashMap<>();
+        params.put("ids", values);
+
+        // When: Appel du batching
+        String result = generateBatchedSqlViaReflection(template, baseSql, params);
+
+        // Then: Un seul lot, les valeurs doivent apparaître dans la clause IN
+        assertNotNull(result);
+        assertTrue(result.contains("Lot 1/1"));
+        assertTrue(result.contains("1") || result.contains("'1'"));
+        assertTrue(result.contains("2") || result.contains("'2'"));
+        assertTrue(result.contains("3") || result.contains("'3'"));
+    }
+
+    @Test
+    void testGenerateBatchedSql_WithTwoBatches() {
+        // Given: Template avec paramètre fichier et liste > ORACLE_IN_MAX_SIZE
+        TemplateDefinition template = createTemplateWithFileParam("ids");
+        String baseSql = "SELECT * FROM T WHERE id IN ({{ids}})";
+
+        // Créer une liste de ORACLE_IN_MAX_SIZE + 1 valeurs
+        int maxSize = 999;
+        List<String> values = new ArrayList<>();
+        for (int i = 0; i < maxSize + 1; i++) {
+            values.add(String.valueOf(i + 1));
+        }
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("ids", values);
+
+        // When: Appel du batching
+        String result = generateBatchedSqlViaReflection(template, baseSql, params);
+
+        // Then: Deux lots doivent être générés
+        assertNotNull(result);
+        assertTrue(result.contains("Lot 1/2"));
+        assertTrue(result.contains("Lot 2/2"));
+    }
+
+    // ========== Tests pour le mode masse CSV (generateMasseSql et associés) ==========
+
+    @Test
+    void testGenerateMasseSql_NoMasseFile() {
+        // Given: Template simple sans paramètre fichier
+        TemplateDefinition template = new TemplateDefinition();
+        template.setId("template-masse");
+        template.setSqlFilename("template-masse.sql");
+
+        ParameterDefinition p1 = new ParameterDefinition();
+        p1.setName("value");
+        p1.setType("text");
+        p1.setFile(false);
+
+        template.setParameters(List.of(p1));
+
+        String baseSql = "UPDATE T SET col = {{value}};";
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("ticket", "JIRA-123");
+        // Pas de masseFile -> extractCsvLines renverra null
+
+        // When
+        String result = generateMasseSqlViaReflection(template, baseSql, params);
+
+        // Then: Sans masseFile, on doit récupérer le SQL de base
+        assertEquals(baseSql, result);
+    }
+
+    @Test
+    void testGenerateMasseSql_WithEmptyMasseFile() {
+        // Given
+        TemplateDefinition template = new TemplateDefinition();
+        template.setId("template-masse");
+        template.setSqlFilename("template-masse.sql");
+
+        ParameterDefinition p1 = new ParameterDefinition();
+        p1.setName("value");
+        p1.setType("text");
+        p1.setFile(false);
+        template.setParameters(List.of(p1));
+
+        String baseSql = "UPDATE T SET col = {{value}};";
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("masseFile", new ArrayList<String>());
+
+        // When
+        String result = generateMasseSqlViaReflection(template, baseSql, params);
+
+        // Then: Liste vide -> on renvoie le SQL de base
+        assertEquals(baseSql, result);
+    }
+
+    @Test
+    void testGenerateMasseSql_WithTwoLines_UsesCsvAndGlobalParams() {
+        // Given: Template avec un paramètre de ligne et un paramètre global (ticket)
+        TemplateDefinition template = new TemplateDefinition();
+        template.setId("template-masse");
+        template.setSqlFilename("template-masse.sql");
+
+        ParameterDefinition pValue = new ParameterDefinition();
+        pValue.setName("value");
+        pValue.setType("text");
+        pValue.setFile(false);
+
+        ParameterDefinition pTicket = new ParameterDefinition();
+        pTicket.setName("ticket");
+        pTicket.setType("text");
+        pTicket.setFile(false);
+
+        // Important: mettre d'abord value puis ticket pour que la CSV "valX" ne remplisse que value
+        template.setParameters(List.of(pValue, pTicket));
+
+        String baseSql = "UPDATE T SET col = {{value}} WHERE ticket = {{ticket}};";
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("ticket", "JIRA-123");
+        // Deux lignes CSV avec une seule colonne -> value vient du CSV, ticket du globalParams
+        List<String> csvLines = Arrays.asList("val1", "val2");
+        params.put("masseFile", csvLines);
+
+        // When
+        String result = generateMasseSqlViaReflection(template, baseSql, params);
+
+        // Then: Deux requêtes avec headers, valeur de ligne et ticket global
+        assertNotNull(result);
+        assertTrue(result.contains("-- Requête 1/2"));
+        assertTrue(result.contains("-- Requête 2/2"));
+        // Vérifier la présence des valeurs CSV
+        assertTrue(result.contains("val1"));
+        assertTrue(result.contains("val2"));
+        // Vérifier la présence du ticket (paramètre global)
+        assertTrue(result.contains("JIRA-123"));
+    }
+
+    // ========== Tests pour isNullValue (branches manquantes) ==========
+
+    @Test
+    void testIsNullValue_WithNullKeyword() {
+        // Given: Valeur "null" (chaîne)
+        Object value = "null";
+
+        // When: Vérification
+        boolean result = isNullValueViaReflection(value);
+
+        // Then: Doit retourner true
+        assertTrue(result);
+    }
+
+    @Test
+    void testIsNullValue_WithNULLKeyword() {
+        // Given: Valeur "NULL" (chaîne)
+        Object value = "NULL";
+
+        // When: Vérification
+        boolean result = isNullValueViaReflection(value);
+
+        // Then: Doit retourner true
+        assertTrue(result);
+    }
+
+    @Test
+    void testIsNullValue_WithNullKeywordCaseInsensitive() {
+        // Given: Valeur "Null" (chaîne)
+        Object value = "Null";
+
+        // When: Vérification
+        boolean result = isNullValueViaReflection(value);
+
+        // Then: Doit retourner true
+        assertTrue(result);
+    }
+
+    // ========== Tests pour buildFileParameterReplacement (branches manquantes) ==========
+
+    @Test
+    void testBuildFileParameterReplacement_WithString() {
+        // Given: Valeur String (pas List)
+        String value = "single-value";
+
+        // When: Construction du remplacement
+        String result = buildFileParameterReplacementViaReflection(value);
+
+        // Then: Doit retourner la valeur formatée
+        assertNotNull(result);
+        assertNotEquals("NULL", result);
+        assertTrue(result.contains("single-value") || result.contains("'single-value'"));
+    }
+
+    @Test
+    void testBuildFileParameterReplacement_WithEmptyString() {
+        // Given: Chaîne vide
+        String value = "";
+
+        // When: Construction du remplacement
+        String result = buildFileParameterReplacementViaReflection(value);
+
+        // Then: Doit retourner NULL
+        assertEquals("NULL", result);
+    }
+
+    @Test
+    void testBuildFileParameterReplacement_WithNullString() {
+        // Given: Chaîne "null"
+        String value = "null";
+
+        // When: Construction du remplacement
+        String result = buildFileParameterReplacementViaReflection(value);
+
+        // Then: Doit retourner NULL
+        assertEquals("NULL", result);
+    }
+
+    @Test
+    void testBuildFileParameterReplacement_WithOtherType() {
+        // Given: Type non-List et non-String
+        Integer value = 42;
+
+        // When: Construction du remplacement
+        String result = buildFileParameterReplacementViaReflection(value);
+
+        // Then: Doit retourner NULL
+        assertEquals("NULL", result);
+    }
+
+    // ========== Tests pour extractDefinedParameters (branches manquantes) ==========
+
+    @Test
+    void testExtractDefinedParameters_WithNullParameters() {
+        // Given: Template avec parameters null
+        TemplateDefinition template = new TemplateDefinition();
+        template.setParameters(null);
+
+        // When: Extraction
+        Set<String> result = extractDefinedParametersViaReflection(template);
+
+        // Then: Doit retourner un Set vide
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+    }
+
+    // ========== Tests pour extractPlaceholders (branches manquantes) ==========
+
+    @Test
+    void testExtractPlaceholders_WithMultiplePlaceholders() {
+        // Given: SQL avec plusieurs placeholders
+        String sqlContent = "SELECT * FROM test WHERE id = {{param1}} AND name = {{param2}};";
+
+        // When: Extraction
+        Set<String> result = extractPlaceholdersViaReflection(sqlContent);
+
+        // Then: Doit contenir les deux placeholders
+        assertEquals(2, result.size());
+        assertTrue(result.contains("param1"));
+        assertTrue(result.contains("param2"));
+    }
+
+    @Test
+    void testExtractPlaceholders_WithNoPlaceholders() {
+        // Given: SQL sans placeholders
+        String sqlContent = "SELECT * FROM test WHERE id = 42;";
+
+        // When: Extraction
+        Set<String> result = extractPlaceholdersViaReflection(sqlContent);
+
+        // Then: Doit retourner un Set vide
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+    }
+
+    // ========== Tests pour validatePlaceholders (branches manquantes) ==========
+
+    @Test
+    void testValidatePlaceholders_WithEmptyPlaceholders() {
+        // Given: Template et SQL sans placeholders
+        TemplateDefinition template = new TemplateDefinition();
+        template.setParameters(new ArrayList<>());
+        String sqlContent = "SELECT * FROM test WHERE id = 42;";
+        String filename = "test.sql";
+
+        // When: Validation (ne doit pas lever d'exception)
+        assertDoesNotThrow(() -> validatePlaceholdersViaReflection(template, sqlContent, filename));
+    }
+
     // Note: parseBooleanValue est dans TemplateMetadataParser, pas dans TemplateService
 
     // ========== Méthodes utilitaires pour les tests ==========
@@ -549,6 +1146,144 @@ class TemplateServiceTest {
         } catch (Exception e) {
             fail("Erreur lors de l'appel parseCsvLine: " + e.getMessage());
             return null;
+        }
+    }
+
+    private String removeMetadataCommentsViaReflection(String sqlContent) {
+        try {
+            java.lang.reflect.Method method = TemplateService.class.getDeclaredMethod("removeMetadataComments", 
+                String.class);
+            method.setAccessible(true);
+            return (String) method.invoke(templateService, sqlContent);
+        } catch (Exception e) {
+            fail("Erreur lors de l'appel removeMetadataComments: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private String replacePlaceholderViaReflection(String sql, String paramName, String replacement) {
+        try {
+            java.lang.reflect.Method method = TemplateService.class.getDeclaredMethod("replacePlaceholder", 
+                String.class, String.class, String.class);
+            method.setAccessible(true);
+            return (String) method.invoke(templateService, sql, paramName, replacement);
+        } catch (Exception e) {
+            fail("Erreur lors de l'appel replacePlaceholder: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private String buildParameterReplacementViaReflection(ParameterDefinition paramDef, Object value) {
+        try {
+            java.lang.reflect.Method method = TemplateService.class.getDeclaredMethod("buildParameterReplacement", 
+                ParameterDefinition.class, Object.class);
+            method.setAccessible(true);
+            return (String) method.invoke(templateService, paramDef, value);
+        } catch (Exception e) {
+            fail("Erreur lors de l'appel buildParameterReplacement: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private String buildFileParameterReplacementViaReflection(Object value) {
+        try {
+            java.lang.reflect.Method method = TemplateService.class.getDeclaredMethod("buildFileParameterReplacement", 
+                Object.class);
+            method.setAccessible(true);
+            return (String) method.invoke(templateService, value);
+        } catch (Exception e) {
+            fail("Erreur lors de l'appel buildFileParameterReplacement: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private String buildSimpleParameterReplacementViaReflection(String type, Object value) {
+        try {
+            java.lang.reflect.Method method = TemplateService.class.getDeclaredMethod("buildSimpleParameterReplacement", 
+                String.class, Object.class);
+            method.setAccessible(true);
+            return (String) method.invoke(templateService, type, value);
+        } catch (Exception e) {
+            fail("Erreur lors de l'appel buildSimpleParameterReplacement: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private ParameterDefinition createParameter(String name, String type, boolean isFile) {
+        ParameterDefinition param = new ParameterDefinition();
+        param.setName(name);
+        param.setType(type);
+        param.setFile(isFile);
+        return param;
+    }
+
+    private String generateBatchedSqlViaReflection(TemplateDefinition template,
+                                                   String baseSql,
+                                                   Map<String, Object> params) {
+        try {
+            java.lang.reflect.Method method = TemplateService.class.getDeclaredMethod(
+                    "generateBatchedSql",
+                    TemplateDefinition.class, String.class, Map.class);
+            method.setAccessible(true);
+            return (String) method.invoke(templateService, template, baseSql, params);
+        } catch (Exception e) {
+            fail("Erreur lors de l'appel generateBatchedSql: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private String generateMasseSqlViaReflection(TemplateDefinition template,
+                                                 String baseSql,
+                                                 Map<String, Object> params) {
+        try {
+            java.lang.reflect.Method method = TemplateService.class.getDeclaredMethod(
+                    "generateMasseSql",
+                    TemplateDefinition.class, String.class, Map.class);
+            method.setAccessible(true);
+            return (String) method.invoke(templateService, template, baseSql, params);
+        } catch (Exception e) {
+            fail("Erreur lors de l'appel generateMasseSql: " + e.getMessage());
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Set<String> extractDefinedParametersViaReflection(TemplateDefinition template) {
+        try {
+            java.lang.reflect.Method method = TemplateService.class.getDeclaredMethod("extractDefinedParameters", 
+                TemplateDefinition.class);
+            method.setAccessible(true);
+            return (Set<String>) method.invoke(templateService, template);
+        } catch (Exception e) {
+            fail("Erreur lors de l'appel extractDefinedParameters: " + e.getMessage());
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Set<String> extractPlaceholdersViaReflection(String sqlContent) {
+        try {
+            java.lang.reflect.Method method = TemplateService.class.getDeclaredMethod("extractPlaceholders", 
+                String.class);
+            method.setAccessible(true);
+            return (Set<String>) method.invoke(templateService, sqlContent);
+        } catch (Exception e) {
+            fail("Erreur lors de l'appel extractPlaceholders: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private void validatePlaceholdersViaReflection(TemplateDefinition template, String sqlContent, String filename) {
+        try {
+            java.lang.reflect.Method method = TemplateService.class.getDeclaredMethod("validatePlaceholders", 
+                TemplateDefinition.class, String.class, String.class);
+            method.setAccessible(true);
+            method.invoke(templateService, template, sqlContent, filename);
+        } catch (Exception e) {
+            if (e.getCause() instanceof IllegalArgumentException) {
+                throw (IllegalArgumentException) e.getCause();
+            }
+            fail("Erreur lors de l'appel validatePlaceholders: " + e.getMessage());
         }
     }
 }
