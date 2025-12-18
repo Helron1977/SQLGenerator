@@ -2,6 +2,8 @@
 
 **Générateur de scripts SQL paramétrés avec API REST et documentation Swagger automatique.**
 
+> 📖 **Pour l'intégration dans un projet plus grand**, consultez [INTEGRATION.md](INTEGRATION.md)
+
 ---
 
 ## 📋 Description

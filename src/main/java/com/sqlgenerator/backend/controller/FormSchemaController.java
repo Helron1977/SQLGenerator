@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,8 +34,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/forms")
-@CrossOrigin(origins = "*")
-@io.swagger.v3.oas.annotations.tags.Tag(name = "Form Schema", description = "Schémas de formulaires - Exposition des métadonnées pour construire les formulaires frontend")
+@Tag(name = "Form Schema", description = "Schémas de formulaires - Exposition des métadonnées pour construire les formulaires frontend")
 public class FormSchemaController {
 
     @Autowired

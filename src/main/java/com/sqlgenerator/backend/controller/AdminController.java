@@ -47,7 +47,6 @@ import org.slf4j.LoggerFactory;
  */
 @RestController
 @RequestMapping("/api/admin")
-@CrossOrigin(origins = "*")
 @Tag(name = "Administration", description = "Opérations d'administration et tests d'intégration système")
 public class AdminController {
 

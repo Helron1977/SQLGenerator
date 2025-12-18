@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.parameters.RequestBody;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
@@ -54,8 +55,7 @@ import org.slf4j.LoggerFactory;
  */
 @RestController
 @RequestMapping("/api/scripts")
-@CrossOrigin(origins = "*")
-@io.swagger.v3.oas.annotations.tags.Tag(name = "Script Generation", description = "Génération de scripts SQL - Création de ressources Script à partir de templates paramétrés")
+@Tag(name = "Script Generation", description = "Génération de scripts SQL - Création de ressources Script à partir de templates paramétrés")
 public class ScriptController {
 
     private static final Logger logger = LoggerFactory.getLogger(ScriptController.class);
