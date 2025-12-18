@@ -42,6 +42,19 @@ public class TemplateMetadataParser {
         logger.debug("Parsing du fichier SQL : {}", filename);
         
         String sqlContent = loadSqlFileContent(filename);
+        return parseSqlContent(filename, sqlContent);
+    }
+
+    /**
+     * Parse le contenu SQL et extrait les métadonnées pour créer une TemplateDefinition.
+     * 
+     * @param filename Nom du fichier SQL (pour les messages d'erreur)
+     * @param sqlContent Contenu SQL complet avec métadonnées
+     * @return TemplateDefinition parsé
+     */
+    public TemplateDefinition parseSqlContent(String filename, String sqlContent) {
+        logger.debug("Parsing du contenu SQL : {}", filename);
+        
         Map<String, String> metadata = extractMetadata(sqlContent);
         List<ParameterDefinition> parameters = extractParameters(sqlContent);
         

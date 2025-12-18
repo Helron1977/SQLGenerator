@@ -12,13 +12,18 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
-import java.util.List;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.*;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Sous-domaine "Administration" - Contrôleur d'administration pour les opérations système.
@@ -35,6 +40,7 @@ import java.util.*;
  * <p><b>Endpoints disponibles</b> :</p>
  * <ul>
  *   <li>POST /api/admin/integration-test : Test d'intégration complet</li>
+ *   <li>POST /api/admin/upload-template : Upload d'un nouveau template SQL</li>
  * </ul>
  * 
  * <p><b>Note</b> : La supervision (health check, métriques) est gérée au niveau supérieur du projet.</p>
@@ -279,6 +285,137 @@ public class AdminController {
         return allPassed 
                 ? ResponseEntity.ok(result)
                 : ResponseEntity.status(500).body(result);
+    }
+
+    private static final Logger logger = LoggerFactory.getLogger(AdminController.class);
+
+    /**
+     * Upload un nouveau template SQL paramétré.
+     * 
+     * Le fichier est validé (métadonnées, placeholders) puis sauvegardé dans
+     * src/main/resources/templates/ et rechargé dans le service.
+     * 
+     * @param file Fichier SQL à uploader
+     * @return Réponse avec le résultat de l'upload
+     */
+    @PostMapping("/upload-template")
+    @Operation(
+            summary = "Uploader un nouveau template SQL",
+            description = """
+                    Upload un fichier SQL paramétré avec métadonnées.
+                    Le fichier est validé puis sauvegardé dans resources/templates/ et rechargé.
+                    """
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Template uploadé et chargé avec succès"),
+            @ApiResponse(responseCode = "400", description = "Fichier invalide (métadonnées manquantes, placeholders non définis, etc.)"),
+            @ApiResponse(responseCode = "500", description = "Erreur lors de l'upload ou du chargement")
+    })
+    public ResponseEntity<Map<String, Object>> uploadTemplate(
+            @RequestParam("file") MultipartFile file) {
+        
+        Map<String, Object> result = new HashMap<>();
+        
+        try {
+            // Validation du fichier
+            if (file == null || file.isEmpty()) {
+                result.put("status", "ERROR");
+                result.put("message", "Fichier vide ou manquant");
+                return ResponseEntity.badRequest().body(result);
+            }
+            
+            String originalFilename = file.getOriginalFilename();
+            if (originalFilename == null || !originalFilename.endsWith(TemplateConstants.SQL_FILE_EXTENSION)) {
+                result.put("status", "ERROR");
+                result.put("message", "Le fichier doit avoir l'extension .sql");
+                return ResponseEntity.badRequest().body(result);
+            }
+            
+            // Lire le contenu du fichier
+            String sqlContent = new String(file.getBytes(), StandardCharsets.UTF_8);
+            
+            // Parser et valider le template
+            TemplateDefinition template;
+            try {
+                // Utiliser le parser pour valider les métadonnées
+                template = templateService.parseAndValidateTemplate(originalFilename, sqlContent);
+            } catch (IllegalArgumentException e) {
+                result.put("status", "ERROR");
+                result.put("message", "Erreur de validation : " + e.getMessage());
+                return ResponseEntity.badRequest().body(result);
+            }
+            
+            // Sauvegarder dans resources/templates/
+            Path templatesPath = getTemplatesResourcesPath();
+            if (templatesPath == null) {
+                result.put("status", "ERROR");
+                result.put("message", "Impossible de déterminer le chemin du répertoire templates (application en JAR ?)");
+                return ResponseEntity.status(500).body(result);
+            }
+            
+            Path targetFile = templatesPath.resolve(originalFilename);
+            Files.write(targetFile, sqlContent.getBytes(StandardCharsets.UTF_8));
+            logger.info("Fichier template sauvegardé : {}", targetFile);
+            
+            // Recharger le template dans le service
+            templateService.reloadTemplate(originalFilename);
+            
+            result.put("status", "SUCCESS");
+            result.put("message", "Template uploadé et chargé avec succès");
+            result.put("templateId", template.getId());
+            result.put("filename", originalFilename);
+            result.put("parametersCount", template.getParameters() != null ? template.getParameters().size() : 0);
+            
+            return ResponseEntity.ok(result);
+            
+        } catch (IOException e) {
+            logger.error("Erreur lors de l'upload du template : {}", e.getMessage(), e);
+            result.put("status", "ERROR");
+            result.put("message", "Erreur I/O : " + e.getMessage());
+            return ResponseEntity.status(500).body(result);
+        } catch (Exception e) {
+            logger.error("Erreur inattendue lors de l'upload du template : {}", e.getMessage(), e);
+            result.put("status", "ERROR");
+            result.put("message", "Erreur : " + e.getMessage());
+            return ResponseEntity.status(500).body(result);
+        }
+    }
+    
+    /**
+     * Obtient le chemin du répertoire resources/templates/.
+     * 
+     * En développement : retourne src/main/resources/templates/
+     * En JAR : retourne null (impossible d'écrire dans le classpath)
+     * 
+     * @return Chemin du répertoire templates ou null si inaccessible
+     */
+    private Path getTemplatesResourcesPath() {
+        try {
+            // Essayer de trouver le répertoire resources/templates
+            // En développement, c'est généralement dans src/main/resources/templates/
+            Path currentPath = Paths.get(".").toAbsolutePath().normalize();
+            
+            // Chercher src/main/resources/templates/
+            Path templatesPath = currentPath.resolve("src/main/resources/templates");
+            if (Files.exists(templatesPath) && Files.isDirectory(templatesPath)) {
+                return templatesPath;
+            }
+            
+            // Chercher dans le classpath (pour les tests)
+            ClassLoader classLoader = getClass().getClassLoader();
+            java.net.URL resource = classLoader.getResource(TemplateConstants.TEMPLATES_DIR);
+            if (resource != null && "file".equals(resource.getProtocol())) {
+                Path path = Paths.get(resource.toURI());
+                if (Files.exists(path) && Files.isDirectory(path)) {
+                    return path;
+                }
+            }
+            
+            return null;
+        } catch (Exception e) {
+            logger.warn("Impossible de déterminer le chemin templates : {}", e.getMessage());
+            return null;
+        }
     }
 }
 

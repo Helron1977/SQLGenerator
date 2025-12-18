@@ -20,7 +20,6 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -185,6 +184,52 @@ public class TemplateService {
 
     public List<TemplateDefinition> getAllTemplates() {
         return templates != null ? templates : Collections.emptyList();
+    }
+
+    /**
+     * Parse et valide un template depuis son contenu SQL (pour upload).
+     * 
+     * @param filename Nom du fichier SQL
+     * @param sqlContent Contenu SQL complet avec métadonnées
+     * @return TemplateDefinition parsé et validé
+     * @throws IllegalArgumentException Si les métadonnées sont invalides ou les placeholders non définis
+     */
+    public TemplateDefinition parseAndValidateTemplate(String filename, String sqlContent) {
+        // Parser les métadonnées depuis le contenu
+        TemplateDefinition template = metadataParser.parseSqlContent(filename, sqlContent);
+        
+        // Valider les placeholders
+        String sqlWithoutMetadata = removeMetadataComments(sqlContent);
+        validatePlaceholders(template, sqlWithoutMetadata, filename);
+        
+        return template;
+    }
+
+    /**
+     * Recharge un template après upload.
+     * 
+     * @param filename Nom du fichier SQL à recharger
+     */
+    public void reloadTemplate(String filename) {
+        try {
+            // Parser le fichier pour obtenir l'ID
+            TemplateDefinition newTemplate = loadTemplateFromFile(filename);
+            String templateId = newTemplate.getId();
+            
+            // Retirer l'ancien template s'il existe
+            TemplateDefinition existing = getTemplateById(templateId);
+            if (existing != null) {
+                templates.remove(existing);
+                logger.info("Template existant retiré : {}", templateId);
+            }
+            
+            // Charger le nouveau template
+            loadTemplateSafely(filename);
+            logger.info("Template rechargé : {} (ID: {})", filename, templateId);
+        } catch (Exception e) {
+            logger.error("Erreur lors du rechargement du template '{}' : {}", filename, e.getMessage(), e);
+            throw new RuntimeException("Impossible de recharger le template : " + e.getMessage(), e);
+        }
     }
 
     public String generateScriptFile(String templateId, String executionType, Map<String, Object> params)

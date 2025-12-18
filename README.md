@@ -6,7 +6,7 @@
 
 ## 📋 Description
 
-SQL Generator est un outil qui transforme vos fichiers SQL paramétrés en API REST documentée automatiquement. Ajoutez simplement un fichier `.sql` avec des métadonnées, et obtenez instantanément un endpoint Swagger prêt à l'emploi.
+SQL Generator est un outil qui transforme vos fichiers SQL paramétrés en API REST. Ajoutez simplement un fichier `.sql` avec des métadonnées, et obtenez instantanément un endpoint Swagger prêt à l'emploi.
 
 ### ✨ Fonctionnalités
 
@@ -84,6 +84,7 @@ Le domaine SQLGENERATOR est organisé en **trois sous-domaines distincts**, chac
 - **Clients** : DevOps, administrateurs, pipelines CI/CD
 - **Endpoints** :
   - `POST /api/admin/integration-test` : Tests d'intégration complets
+  - `POST /api/admin/upload-template` : Upload d'un nouveau template SQL paramétré
 
 **Justification** : Séparation des **opérations d'administration** (tests, validations système) des opérations métier (exposition de schémas, génération de scripts). Les clients sont différents (opérateurs vs utilisateurs finaux), les permissions peuvent être distinctes, et l'évolution est indépendante.
 
