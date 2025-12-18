@@ -97,7 +97,27 @@ public class TemplateMetadataParser {
         template.setSqlFilename(filename);
         template.setParameters(parameters != null ? parameters : new ArrayList<>());
         
+        // Parse la métadonnée @hidden (pour masquer les templates de test)
+        template.setHidden(parseHiddenMetadata(metadata));
+        
         return template;
+    }
+
+    /**
+     * Parse la métadonnée @hidden pour déterminer si le template doit être masqué.
+     * 
+     * Format supporté : -- @hidden: true ou -- @hidden: false
+     * Par défaut, retourne false (template visible).
+     * 
+     * @param metadata Map des métadonnées extraites
+     * @return true si le template doit être masqué, false sinon
+     */
+    private boolean parseHiddenMetadata(Map<String, String> metadata) {
+        String hiddenStr = metadata.get("hidden");
+        if (hiddenStr == null || hiddenStr.trim().isEmpty()) {
+            return false; // Par défaut, visible
+        }
+        return Boolean.parseBoolean(hiddenStr.trim());
     }
 
     /**

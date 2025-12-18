@@ -1,6 +1,6 @@
 # 🔧 SQL Generator
 
-**Générateur de scripts SQL paramétrés avec API REST et documentation Swagger automatique.**
+**Générateur de scripts SQL paramétrés avec API REST, documentation Swagger automatique et frontend React modulaire.**
 
 > 📖 **Pour l'intégration dans un projet plus grand**, consultez [INTEGRATION.md](INTEGRATION.md)
 

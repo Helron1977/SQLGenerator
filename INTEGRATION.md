@@ -174,6 +174,87 @@ public class SecurityConfig {
 - [ ] Templates SQL disponibles dans classpath ou répertoire configuré
 - [ ] Tests d'intégration vérifiés via `POST /api/admin/integration-test`
 
+## 🎨 Frontend
+
+Le module inclut un frontend React modulaire prêt pour l'intégration.
+
+### Structure
+
+Le frontend est dans le répertoire `frontend/` :
+- **Composant principal** : `SqlGeneratorApp` (sans en-tête ni navbar)
+- **Layout** : Colonne gauche (1/3) pour la liste des templates + Zone droite (2/3) pour le formulaire
+- **Formulaires dynamiques** : Génération automatique depuis les schémas backend
+- **Modes supportés** : Unitaire et Masse
+
+### Installation
+
+```bash
+cd frontend
+npm install
+npm run dev  # Développement
+npm run build # Production
+```
+
+### Intégration dans le projet parent
+
+#### Option 1 : Import comme module (recommandé)
+
+```tsx
+import { SqlGeneratorApp } from '@sqlgenerator/frontend';
+
+function App() {
+  return (
+    <div>
+      <Header /> {/* Géré par le parent */}
+      <Sidebar /> {/* Géré par le parent */}
+      <main>
+        <SqlGeneratorApp /> {/* Module SQL Generator */}
+      </main>
+    </div>
+  );
+}
+```
+
+#### Option 2 : Copier les composants
+
+Copier le contenu de `frontend/src/` dans le projet parent et adapter les imports.
+
+#### Option 3 : Iframe (simple mais moins flexible)
+
+```html
+<iframe 
+  src="http://localhost:5173" 
+  style="width: 100%; height: 100vh; border: none;"
+></iframe>
+```
+
+### Configuration
+
+#### Variable d'environnement
+
+Définir `VITE_API_BASE_URL` pour pointer vers le backend :
+
+```env
+VITE_API_BASE_URL=http://localhost:8080/api
+```
+
+Par défaut, utilise `/api` (URL relative).
+
+#### Proxy de développement
+
+Le `vite.config.ts` inclut un proxy pour `/api` vers `http://localhost:8080`.
+
+### Points d'attention Frontend
+
+1. **Pas d'en-tête/navbar** : Le composant `SqlGeneratorApp` ne contient que le contenu principal
+2. **Styles isolés** : Préfixes de classe (`sql-generator-`, `template-list-`, `dynamic-form-`) pour éviter les conflits
+3. **Layout flexible** : S'adapte à la taille du conteneur parent
+4. **CORS** : Doit être configuré côté backend (ou via proxy)
+
+### Documentation Frontend
+
+Consultez `frontend/README.md` pour plus de détails.
+
 ## 🐛 Dépannage
 
 ### Conflit Swagger
@@ -184,8 +265,14 @@ Si le projet parent a sa propre configuration Swagger et qu'il y a des conflits 
 ### CORS non fonctionnel
 - Vérifier que le parent configure CORS globalement
 - Retirer tout `@CrossOrigin` des contrôleurs (déjà fait)
+- Vérifier que le frontend peut accéder aux endpoints `/api/*`
 
 ### Properties non chargées
 - Vérifier que `@ConfigurationProperties` est activé dans le parent
 - Vérifier le préfixe `sql.generator` dans application.properties
+
+### Frontend ne charge pas les données
+- Vérifier que `VITE_API_BASE_URL` est correctement configuré
+- Vérifier que le backend est accessible depuis le frontend
+- Vérifier les logs du navigateur (Console) pour les erreurs CORS ou réseau
 

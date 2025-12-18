@@ -23,4 +23,14 @@ public class TemplateDefinition {
      */
     private String sqlFilename;
     private List<ParameterDefinition> parameters;
+    
+    /**
+     * Indique si ce template doit être masqué dans la liste des formulaires.
+     * 
+     * Si true, le template ne sera pas exposé via GET /api/forms (mais reste disponible
+     * pour les tests d'intégration et l'administration).
+     * 
+     * Défini via la métadonnée -- @hidden: true dans le fichier SQL.
+     */
+    private boolean hidden = false;
 }

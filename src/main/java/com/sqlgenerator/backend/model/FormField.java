@@ -49,6 +49,17 @@ public class FormField {
      * Texte d'aide optionnel pour l'utilisateur (placeholder, info).
      */
     private String helpText;
+
+    /**
+     * Indique si ce champ est purement technique (non métier).
+     * <p>
+     * Exemple typique : {@code executionType}, utilisé pour piloter le mode
+     * d'exécution (unitaire/masse) côté backend, mais qui ne doit pas être
+     * affiché comme champ de saisie explicite dans le formulaire.
+     * <p>
+     * Par défaut à false (champ métier).
+     */
+    private boolean technical;
 }
 
 

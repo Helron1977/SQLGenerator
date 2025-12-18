@@ -31,6 +31,8 @@ public class FormSchemaService {
 
     /**
      * Retourne les schémas de formulaires pour tous les templates disponibles.
+     * 
+     * Les templates marqués comme "hidden" (templates de test) sont exclus de cette liste.
      */
     public List<FormSchema> getAllFormSchemas() {
         List<TemplateDefinition> templates = templateService.getAllTemplates();
@@ -39,6 +41,7 @@ public class FormSchemaService {
         }
 
         return templates.stream()
+                .filter(template -> !template.isHidden()) // Exclure les templates cachés
                 .map(this::buildFormSchema)
                 .collect(Collectors.toList());
     }
@@ -255,6 +258,8 @@ public class FormSchemaService {
         executionType.setType(TemplateConstants.FIELD_TYPE_SELECT);
         executionType.setLabel("Type d'exécution");
         executionType.setRequired(true);
+        // Champ purement technique : piloté par le front (switch de mode), non affiché en tant que champ
+        executionType.setTechnical(true);
 
         List<String> options = new ArrayList<>();
         options.add(TemplateConstants.EXECUTION_TYPE_UNITAIRE);
